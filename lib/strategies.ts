@@ -20,7 +20,7 @@ export const STRATEGIES: Strategy[] = [
   { id: 'range_sell', name: 'Range Reversion (Sell)', regimes: ['range'], side: 'SELL', conds: [
     { text: 'ADX < 20', test: (i) => i.adx < 20 }, { text: 'RSI >= 70', test: (i) => i.rsi >= 70 } ] },
 ];
-export const STRATEGY_IDS = [...STRATEGIES.map((s) => s.id), 'no_trade'] as [string, ...string[]];
+export const STRATEGY_IDS = [...STRATEGIES.map((s) => s.id), 'no_trade'] as unknown as [string, ...string[]];
 
 export function evaluate(s: Strategy, i: Ind) {
   const results = s.conds.map((c) => ({ text: c.text, ok: c.test(i) }));
