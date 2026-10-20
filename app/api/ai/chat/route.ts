@@ -1,11 +1,11 @@
-import { isAdmin } from '@/lib/auth';
+import { who } from '@/lib/auth';
 import { chat } from '@/lib/ai';
 import { getCmds, getJSON, getSettings } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  if (!isAdmin(req)) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if (!(await who(req))) return Response.json({ error: 'unauthorized' }, { status: 401 });
   const { message } = await req.json().catch(() => ({ message: '' }));
   if (!message || typeof message !== 'string') return Response.json({ error: 'bad body' }, { status: 400 });
   const [cmds, decision, settings] = await Promise.all([getCmds(), getJSON<any>('decision', null), getSettings()]);

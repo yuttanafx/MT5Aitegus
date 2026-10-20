@@ -21,6 +21,12 @@ export default function Page() {
   const [model, setModel] = useState('');
   const [keyDraft, setKeyDraft] = useState('');
   const [saved, setSaved] = useState('');
+  const [theme, setTheme] = useState('dark');
+  const [loginErr, setLoginErr] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
+  const [newName, setNewName] = useState('');
+  const [issued, setIssued] = useState<{ name: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
   const [autoVoice, setAutoVoice] = useState(false);
   const lastSeen = useRef<string | null>(null);
@@ -31,22 +37,38 @@ export default function Page() {
   useEffect(() => {
     setKey(sessionStorage.getItem('hubkey') || '');
     setAutoVoice(localStorage.getItem('autovoice') === '1');
+    setTheme(document.documentElement.dataset.theme || 'dark');
     // browsers only allow speech after a user gesture: unlock it on the first click/tap
     const unlock = () => { try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch {} };
     window.addEventListener('pointerdown', unlock, { once: true });
     return () => window.removeEventListener('pointerdown', unlock);
   }, []);
 
+  const toggleTheme = () => {
+    const t = theme === 'dark' ? 'light' : 'dark';
+    setTheme(t); document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('theme', t); } catch {}
+  };
+  const logout = () => { sessionStorage.removeItem('hubkey'); setKey(''); setData(null); setUsers([]); setIssued(null); lastSeen.current = null; };
+  const login = async () => {
+    setLoginErr('');
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: draft }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setLoginErr(j.error || 'เข้าสู่ระบบไม่สำเร็จ'); return; }
+    const pw = draft.trim(); sessionStorage.setItem('hubkey', pw); setKey(pw); setDraft('');
+  };
+  const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'สลับเป็นโหมดกลางวัน' : 'สลับเป็นโหมดกลางคืน'}>{theme === 'dark' ? '☀️ กลางวัน' : '🌙 กลางคืน'}</button>;
+
   const api = useCallback(async (path: string, body?: any) => {
     const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key }, body: body ? JSON.stringify(body) : undefined });
-    if (!r.ok) throw new Error(r.status === 401 ? 'ADMIN_KEY ไม่ถูกต้อง' : 'เกิดข้อผิดพลาด ' + r.status);
+    if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : 'เกิดข้อผิดพลาด ' + r.status);
     return r.json();
   }, [key]);
 
   const load = useCallback(() => api('/api/state').then((d) => {
     setData(d); setErr('');
     setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15));
-  }).catch((e) => setErr(e.message)), [api, data]);
+  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (!key) return; load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [key, load]);
 
@@ -95,16 +117,29 @@ export default function Page() {
 
   const act = async (fn: () => Promise<any>) => { setBusy(true); try { await fn(); await load(); } catch (e: any) { setErr(e.message); } setBusy(false); };
   const d = data?.decision;
+  const isAdmin = data?.me?.role === 'admin';
+  useEffect(() => { if (isAdmin) api('/api/users').then((r) => setUsers(r.users)).catch(() => {}); }, [isAdmin, api]);
+  const userAct = (body: any) => act(async () => {
+    const r = await api('/api/users', body);
+    setUsers(r.users);
+    if (r.password) { setIssued({ name: r.name, password: r.password }); setCopied(false); }
+    if (body.action === 'create') setNewName('');
+  });
+  const copyIssued = async () => {
+    if (!issued) return;
+    try { await navigator.clipboard.writeText(`MT5 Signal Hub\nลิงก์: ${location.origin}\nรหัสผ่าน: ${issued.password}`); setCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); }
+  };
   const paused = !!data?.settings?.paused;
 
   if (!key) {
     return (
       <main className="shell" style={{ maxWidth: 420, marginTop: 80 }}>
         <div className="card">
-          <h1>MT5 Signal Hub</h1>
-          <label className="sub" htmlFor="k">ADMIN_KEY (ตั้งไว้ใน Environment Variables)</label>
-          <input id="k" type="password" value={draft} onChange={(e) => setDraft(e.target.value)} />
-          <button className="btn main" onClick={() => { sessionStorage.setItem('hubkey', draft); setKey(draft); }}>เข้าสู่ระบบ</button>
+          <div className="row" style={{ justifyContent: 'space-between' }}><h1>MT5 Signal Hub</h1><ThemeBtn /></div>
+          <label className="sub" htmlFor="k">รหัสผ่าน (ผู้ดูแลหรือผู้ใช้ที่ได้รับรหัสจากผู้ดูแล)</label>
+          <input id="k" type="password" autoComplete="current-password" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') login(); }} />
+          {loginErr && <div className="err" role="alert">{loginErr}</div>}
+          <button className="btn main" onClick={login}>เข้าสู่ระบบ</button>
         </div>
       </main>
     );
@@ -115,10 +150,13 @@ export default function Page() {
       <div className="top">
         <div><h1>MT5 Signal Hub</h1><div className="sub">AI เลือกกลยุทธ์ · เซิร์ฟเวอร์ตรวจเงื่อนไข · EA ส่งคำสั่ง</div></div>
         <div className="row">
+          <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}</span>
           <span className={'chip ' + (paused ? 'no' : 'ok')}>{paused ? 'ระบบหยุดอยู่' : 'ระบบทำงาน'}</span>
-          <button className={'btn ' + (paused ? 'main' : 'warn')} disabled={busy} onClick={() => act(() => api('/api/settings', { paused: !paused }))}>
+          {isAdmin && <button className={'btn ' + (paused ? 'main' : 'warn')} disabled={busy} onClick={() => act(() => api('/api/settings', { paused: !paused }))}>
             {paused ? 'เปิดระบบ' : 'หยุดส่งคำสั่งทั้งหมด'}
-          </button>
+          </button>}
+          <ThemeBtn />
+          <button className="btn" onClick={logout}>ออกจากระบบ</button>
         </div>
       </div>
       {err && <div className="err" role="alert">{err}</div>}
@@ -153,18 +191,19 @@ export default function Page() {
             </div>}
             <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>
           </>)}
-          <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+          {isAdmin && <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <label className="sub" htmlFor="iv">ให้ AI วิเคราะห์ทุก</label>
             <select id="iv" value={iv} onChange={(e) => setIv(Number(e.target.value))}>
               {INTERVALS.map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + ' ชั่วโมง' : m + ' นาที'}</option>)}
             </select>
             <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { intervalMin: iv }))}>บันทึก</button>
             <span className="mute">ตอนนี้: {data?.settings?.intervalMin ?? 15} นาที</span>
-          </div>
-          <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>
+          </div>}
+          {!isAdmin && <div className="mute">AI วิเคราะห์ทุก {data?.settings?.intervalMin ?? 15} นาที</div>}
+          {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>}
         </section>
 
-        <section className="card">
+        {isAdmin && <section className="card">
           <h2>ผู้ให้บริการ AI</h2>
           <div className="row">
             {PROVIDERS.map(([id, name]) => (
@@ -186,7 +225,7 @@ export default function Page() {
             </div>
           </div>
           <div className="mute">ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด</div>
-        </section>
+        </section>}
       </div>
 
       <section className="card">
@@ -206,6 +245,38 @@ export default function Page() {
           </tbody>
         </table></div>
       </section>
+
+      {isAdmin && <section className="card">
+        <h2>ผู้ใช้งาน</h2>
+        <div className="mute">สร้างรหัสผ่านแล้วส่งให้ผู้ใช้ ผู้ใช้ดูข้อมูลและคุยกับ AI ได้ แต่ตั้งค่า หยุดระบบ หรือจัดการ key ไม่ได้ รหัสจะแสดงครั้งเดียว (ถ้าหายให้กด "รีเซ็ตรหัส")</div>
+        <div className="row">
+          <label className="sub" htmlFor="nu">ชื่อผู้ใช้</label>
+          <input id="nu" value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} placeholder="เช่น สมชาย" />
+          <button className="btn main" disabled={busy || !newName.trim()} onClick={() => userAct({ action: 'create', name: newName })}>สร้างรหัสผ่าน</button>
+        </div>
+        {issued && <div className="bubble ai" role="status">
+          <div className="mute">รหัสผ่านของ {issued.name} (แสดงครั้งเดียว)</div>
+          <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{issued.password}</div>
+          <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์ + รหัส'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
+        </div>}
+        <div className="tblwrap"><table>
+          <thead><tr><th>ชื่อ</th><th>สร้างเมื่อ</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id}>
+                <td>{u.name}</td>
+                <td>{new Date(u.createdAt).toLocaleDateString('th-TH')}</td>
+                <td>{u.lastSeen ? new Date(u.lastSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
+                <td><div className="row">
+                  <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>รีเซ็ตรหัส</button>
+                  <button className="btn warn" disabled={busy} onClick={() => { if (confirm(`ลบผู้ใช้ ${u.name}?`)) userAct({ action: 'delete', id: u.id }); }}>ลบ</button>
+                </div></td>
+              </tr>
+            ))}
+            {!users.length && <tr><td colSpan={4} className="mute">ยังไม่มีผู้ใช้</td></tr>}
+          </tbody>
+        </table></div>
+      </section>}
     </main>
   );
 }

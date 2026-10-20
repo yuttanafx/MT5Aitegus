@@ -7,7 +7,8 @@ export const metadata = { title: 'MT5 Signal Hub' };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="th">
+    <html lang="th" suppressHydrationWarning>
+      <head><script dangerouslySetInnerHTML={{ __html: "try{document.documentElement.dataset.theme=localStorage.getItem('theme')||'dark'}catch(e){}" }} /></head>
       <body className={font.className}>
         <Galaxy />
         {children}

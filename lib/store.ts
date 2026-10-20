@@ -49,3 +49,7 @@ export async function getKeys(): Promise<Keys> {
   const saved = await getStoredKeys();
   return { anthropic: saved.anthropic || ENV_KEY.anthropic, openai: saved.openai || ENV_KEY.openai, google: saved.google || ENV_KEY.google };
 }
+
+import type { User } from './types';
+export const getUsers = () => getJSON<User[]>('users', []);
+export const saveUsers = (u: User[]) => setJSON('users', u);

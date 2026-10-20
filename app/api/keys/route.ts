@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isAdmin } from '@/lib/auth';
+import { who } from '@/lib/auth';
 import { getStoredKeys, setJSON } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
@@ -7,7 +7,7 @@ const Body = z.object({ provider: z.enum(['anthropic', 'openai', 'google']), key
 
 // Save (or clear, with an empty string) an AI provider key. Keys are never sent back to the browser.
 export async function POST(req: Request) {
-  if (!isAdmin(req)) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  if ((await who(req))?.role !== 'admin') return Response.json({ error: 'unauthorized' }, { status: 401 });
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: 'bad body' }, { status: 400 });
   if (p.data.key && /\s/.test(p.data.key)) return Response.json({ error: 'key ห้ามมีช่องว่าง' }, { status: 400 });

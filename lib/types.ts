@@ -4,3 +4,4 @@ export type Cmd = {
   source: 'webhook' | 'ai'; ticket?: number; price?: number; note?: string;
 };
 export type Settings = { provider: 'anthropic' | 'openai' | 'google'; model: string; paused: boolean; intervalMin: number };
+export type User = { id: string; name: string; hash: string; createdAt: number; lastSeen?: number };
