@@ -10,6 +10,7 @@ input string          ServerUrl      = "https://YOUR-APP.vercel.app"; // no trai
 input string          ApiKey         = "";        // same as EA_API_KEY on Vercel
 input int             PollSeconds    = 3;         // 3-5 recommended (each poll = 1 serverless call)
 input bool            SendIndicators = true;      // send closed-bar indicators to the AI
+input int             PushSeconds    = 60;        // how often to offer data to the server (the server throttles by the interval set in the dashboard)
 input ENUM_TIMEFRAMES SignalTF       = PERIOD_M15;
 input double          SignalLot      = 0.01;      // lot used for AI-generated signals
 input string          SymbolSuffix   = "";        // broker suffix, e.g. "m" for XAUUSDm
@@ -18,7 +19,7 @@ input int             Deviation      = 20;
 
 CTrade   trade;
 int      hEma20, hEma50, hRsi, hAdx, hAtr;
-datetime lastBar = 0;
+datetime lastPush = 0;
 
 int OnInit()
 {
@@ -96,9 +97,9 @@ void OnTimer()
       int n = StringSplit(resp, '\n', lines);
       for(int i = 0; i < n; i++) if(StringLen(lines[i]) > 5) Execute(lines[i]);
    }
-   if(SendIndicators)
+   if(SendIndicators && TimeCurrent() - lastPush >= PushSeconds)
    {
-      datetime t = iTime(_Symbol, SignalTF, 0);
-      if(t != lastBar) { if(lastBar != 0) PushIndicators(); lastBar = t; }
+      lastPush = TimeCurrent();
+      PushIndicators();
    }
 }

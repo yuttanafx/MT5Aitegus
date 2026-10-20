@@ -17,7 +17,7 @@ export async function setJSON(k: string, v: any) {
 }
 
 export const defaultSettings = (): Settings => ({
-  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false,
+  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15,
 });
 export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {})) });
 export const getCmds = () => getJSON<Cmd[]>('cmds', []);
@@ -29,8 +29,8 @@ export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp
   const settings = await getSettings();
   let reason: string | null = settings.paused ? 'ระบบถูกหยุดชั่วคราว' : riskCheck(p, cmds);
   if (!reason && p.source === 'ai') {
-    const dup = cmds.find((c) => c.symbol === p.symbol && c.side === p.side && Date.now() - c.ts < 10 * 60_000 && c.status !== 'blocked' && c.status !== 'failed');
-    if (dup) reason = 'มีคำสั่งเดียวกันในช่วง 10 นาทีที่ผ่านมา';
+    const dup = cmds.find((c) => c.symbol === p.symbol && c.side === p.side && Date.now() - c.ts < Math.max(10, settings.intervalMin) * 60_000 && c.status !== 'blocked' && c.status !== 'failed');
+    if (dup) reason = 'มีคำสั่งเดียวกันในช่วงเวลาที่กันซ้ำ';
   }
   const cmd: Cmd = { id: randomUUID().slice(0, 8), ts: Date.now(), status: reason ? 'blocked' : 'pending', note: reason ?? undefined, ...p };
   await saveCmds([cmd, ...cmds]);

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
 const STATUS: Record<string, string> = { pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' };
 const PROVIDERS = [['anthropic', 'Claude'], ['openai', 'GPT'], ['google', 'Gemini']];
+const REGIME: Record<string, string> = { trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' };
+const INTERVALS = [1, 3, 5, 10, 15, 30, 60, 120];
 type Mode = 'idle' | 'listening' | 'speaking';
 
 export default function Page() {
@@ -19,11 +21,21 @@ export default function Page() {
   const [model, setModel] = useState('');
   const [keyDraft, setKeyDraft] = useState('');
   const [saved, setSaved] = useState('');
+  const [iv, setIv] = useState(15);
+  const [autoVoice, setAutoVoice] = useState(false);
+  const lastSeen = useRef<string | null>(null);
   const modeRef = useRef<Mode>('idle');
   const recRef = useRef<any>(null);
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m); };
 
-  useEffect(() => { setKey(sessionStorage.getItem('hubkey') || ''); }, []);
+  useEffect(() => {
+    setKey(sessionStorage.getItem('hubkey') || '');
+    setAutoVoice(localStorage.getItem('autovoice') === '1');
+    // browsers only allow speech after a user gesture: unlock it on the first click/tap
+    const unlock = () => { try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch {} };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    return () => window.removeEventListener('pointerdown', unlock);
+  }, []);
 
   const api = useCallback(async (path: string, body?: any) => {
     const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key }, body: body ? JSON.stringify(body) : undefined });
@@ -33,7 +45,7 @@ export default function Page() {
 
   const load = useCallback(() => api('/api/state').then((d) => {
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || ''));
+    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15));
   }).catch((e) => setErr(e.message)), [api, data]);
 
   useEffect(() => { if (!key) return; load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [key, load]);
@@ -50,6 +62,24 @@ export default function Page() {
     setHeard(q); setReply('กำลังคิด…'); setMode('speaking');
     try { const r = await api('/api/ai/chat', { message: q }); setReply(r.text); speak(r.text); }
     catch (e: any) { setReply(e.message); setMode('idle'); }
+  };
+
+  // Speak automatically when the market regime of a symbol changes (only for real EA analyses, not dashboard tests).
+  useEffect(() => {
+    const dd = data?.decision;
+    if (!dd || !dd.regime) return;
+    const sig = dd.symbol + '|' + dd.regime;
+    const prev = lastSeen.current;
+    lastSeen.current = sig;
+    if (prev === null || prev === sig || dd.src !== 'ea' || !autoVoice || dd.confidence === 0 || modeRef.current !== 'idle') return;
+    const text = `${dd.symbol} ตลาดเปลี่ยนเป็น${REGIME[dd.regime] ?? dd.regime} ` +
+      (dd.strategy_id === 'no_trade' ? 'ยังไม่เข้าเทรด ' : `AI เลือกกลยุทธ์ ${dd.strategy}${dd.pass ? ' และผ่านเงื่อนไขเข้าเทรด' : ' แต่ยังไม่ผ่านเงื่อนไข'} `) + (dd.reason || '');
+    setHeard('(แจ้งเตือนอัตโนมัติ)'); setReply(text); setMode('speaking'); speak(text);
+  }, [data, autoVoice]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleAutoVoice = () => {
+    const v = !autoVoice; setAutoVoice(v); localStorage.setItem('autovoice', v ? '1' : '0');
+    if (v) { setReply('เปิดเสียงแจ้งเตือนอัตโนมัติแล้ว จะพูดเมื่อตลาดมีแนวโน้มใหม่'); speak('เปิดเสียงแจ้งเตือนอัตโนมัติแล้ว'); setMode('speaking'); }
   };
 
   const toggleMic = () => {
@@ -106,13 +136,14 @@ export default function Page() {
             <button className="btn main" onClick={toggleMic}>{mode === 'idle' ? 'คุยกับ AI' : 'หยุด'}</button>
             <button className="btn" onClick={() => ask('ตอนนี้ใช้กลยุทธ์อะไร')}>ตอนนี้ใช้กลยุทธ์อะไร</button>
             <button className="btn" onClick={() => ask('สรุปคำสั่งล่าสุด')}>สรุปคำสั่งล่าสุด</button>
+            <button className={'btn ' + (autoVoice ? 'main' : '')} aria-pressed={autoVoice} onClick={toggleAutoVoice}>{autoVoice ? '🔔 เสียงแจ้งเตือน: เปิด' : '🔕 เสียงแจ้งเตือน: ปิด'}</button>
           </div>
         </div>
       </section>
 
       <div className="grid">
         <section className="card">
-          <div className="row" style={{ justifyContent: 'space-between' }}><h2>การตัดสินใจล่าสุดของ AI</h2><span className="mute">{d ? `${d.symbol} · ${d.tf}` : ''}</span></div>
+          <div className="row" style={{ justifyContent: 'space-between' }}><h2>การตัดสินใจล่าสุดของ AI</h2><span className="mute">{d ? `${d.symbol} · ${d.tf} · ${new Date(d.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}</span></div>
           {!d ? <div className="mute">ยังไม่มีข้อมูล รอ EA ส่งแท่งเทียน หรือกดทดสอบด้านล่าง</div> : (<>
             <div className="row"><span className="chip ok">{d.regime}</span><b style={{ fontSize: 19 }}>{d.strategy}</b></div>
             <div><div className="bar"><i style={{ width: Math.round(d.confidence * 100) + '%' }} /></div><div className="mute" style={{ marginTop: 6 }}>ความมั่นใจ {Math.round(d.confidence * 100)}% · {d.provider ?? '-'} {d.model}</div></div>
@@ -122,6 +153,14 @@ export default function Page() {
             </div>}
             <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>
           </>)}
+          <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+            <label className="sub" htmlFor="iv">ให้ AI วิเคราะห์ทุก</label>
+            <select id="iv" value={iv} onChange={(e) => setIv(Number(e.target.value))}>
+              {INTERVALS.map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + ' ชั่วโมง' : m + ' นาที'}</option>)}
+            </select>
+            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { intervalMin: iv }))}>บันทึก</button>
+            <span className="mute">ตอนนี้: {data?.settings?.intervalMin ?? 15} นาที</span>
+          </div>
           <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>
         </section>
 

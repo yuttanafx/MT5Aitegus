@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { isAdmin, isEA } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { STRATEGIES, evaluate } from '@/lib/strategies';
-import { addCmd, setJSON } from '@/lib/store';
+import { addCmd, getJSON, getSettings, setJSON } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -21,6 +21,15 @@ export async function POST(req: Request) {
   if (!p.success) return Response.json({ error: 'bad body' }, { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
 
+  // EA calls are throttled by the interval set in the dashboard (admin test runs are never throttled).
+  const fromEA = !isAdmin(req);
+  if (fromEA) {
+    const [{ intervalMin }, last] = await Promise.all([getSettings(), getJSON<number>('lastrun:' + ind.symbol, 0)]);
+    const wait = last + intervalMin * 60_000 - Date.now();
+    if (wait > 5_000) return Response.json({ skipped: true, nextInSec: Math.ceil(wait / 1000) });
+    await setJSON('lastrun:' + ind.symbol, Date.now());
+  }
+
   const d = await decide(ind);
   const s = STRATEGIES.find((x) => x.id === d.strategy_id);
   const ev = s ? evaluate(s, ind) : null;
@@ -35,7 +44,7 @@ export async function POST(req: Request) {
     });
     cmdId = cmd.id;
   }
-  const out = { ...d, symbol: ind.symbol, tf: ind.tf, ts: Date.now(), strategy: s?.name ?? 'ไม่เทรด', eval: ev, pass, cmdId };
+  const out = { ...d, symbol: ind.symbol, tf: ind.tf, ts: Date.now(), strategy: s?.name ?? 'ไม่เทรด', eval: ev, pass, cmdId, src: fromEA ? 'ea' : 'test' };
   await setJSON('decision', out);
   return Response.json(out);
 }
