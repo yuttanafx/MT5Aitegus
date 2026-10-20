@@ -15,10 +15,11 @@ AI เลือก "กลยุทธ์" เท่านั้น ส่วน
 2. Vercel → Add New → Project → เลือก repo → Deploy
 3. Vercel → Storage / Marketplace → เพิ่ม **Upstash Redis** แล้วต่อเข้ากับโปรเจกต์ (ได้ตัวแปร URL/TOKEN อัตโนมัติ)
 4. Settings → Environment Variables ใส่ตาม `.env.example`
-   (อย่างน้อย `ADMIN_KEY`, `EA_API_KEY`, `WEBHOOK_SECRET` และ API key ของ AI เจ้าที่ใช้) แล้ว Redeploy
+   (อย่างน้อย `ADMIN_KEY`, `EA_API_KEY`, `WEBHOOK_SECRET`) แล้ว Redeploy
+   **API key ของ AI ไม่ต้องใส่ใน Vercel** — ใส่ได้ในหน้า Dashboard → การ์ด "ผู้ให้บริการ AI" → ช่อง "API key" (เก็บใน Redis, ไม่ถูกส่งกลับมาแสดงที่เบราว์เซอร์) ถ้าใส่ทั้งสองที่ จะใช้ key จากหน้า Dashboard ก่อน
 5. เปิดเว็บ ใส่ `ADMIN_KEY` เพื่อเข้าหน้า Dashboard
 
-ไม่มี Redis ก็รันได้ แต่ข้อมูลอยู่ในหน่วยความจำ จะหายเมื่อฟังก์ชันรีสตาร์ท ใช้ทดสอบในเครื่อง (`npm i && npm run dev`) เท่านั้น
+ไม่มี Redis ก็รันได้ แต่ข้อมูล (รวมถึง API key ที่กรอกในหน้าเว็บ) อยู่ในหน่วยความจำ จะหายเมื่อฟังก์ชันรีสตาร์ท ใช้ทดสอบในเครื่อง (`npm i && npm run dev`) เท่านั้น
 
 ## 2) ติดตั้ง EA
 1. คัดลอก `ea/SignalHubEA.mq5` ไปที่ `MQL5/Experts` แล้วคอมไพล์ใน MetaEditor

@@ -4,7 +4,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { STRATEGIES, STRATEGY_IDS, type Ind } from './strategies';
-import { getSettings } from './store';
+import { getSettings, getKeys, type Keys } from './store';
 import type { Settings } from './types';
 
 type P = Settings['provider'];
@@ -14,22 +14,20 @@ const DEFAULT_MODEL: Record<P, string> = {
   openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
   google: process.env.GOOGLE_MODEL || 'gemini-2.0-flash',
 };
-const hasKey = (p: P) => !!{ anthropic: process.env.ANTHROPIC_API_KEY, openai: process.env.OPENAI_API_KEY, google: process.env.GOOGLE_GENERATIVE_AI_API_KEY }[p];
-
-function modelFor(p: P, id: string) {
-  if (p === 'openai') return createOpenAI({ apiKey: process.env.OPENAI_API_KEY })(id);
-  if (p === 'google') return createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })(id);
-  return createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })(id);
+function modelFor(p: P, id: string, k: Keys) {
+  if (p === 'openai') return createOpenAI({ apiKey: k.openai })(id);
+  if (p === 'google') return createGoogleGenerativeAI({ apiKey: k.google })(id);
+  return createAnthropic({ apiKey: k.anthropic })(id);
 }
 
 // Tries the selected provider first, then the other providers that have a key.
 async function withFallback<T>(fn: (m: any, p: P, id: string) => Promise<T>): Promise<T & { provider: P; model: string }> {
-  const s = await getSettings();
-  const chain = [s.provider, ...ORDER.filter((p) => p !== s.provider)].filter(hasKey);
-  let last: any = new Error('ยังไม่ได้ตั้งค่า API key ของผู้ให้บริการ AI');
+  const [s, keys] = await Promise.all([getSettings(), getKeys()]);
+  const chain = [s.provider, ...ORDER.filter((p) => p !== s.provider)].filter((p) => !!keys[p]);
+  let last: any = new Error('ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
   for (const p of chain) {
     const id = p === s.provider && s.model ? s.model : DEFAULT_MODEL[p];
-    try { return { ...(await fn(modelFor(p, id), p, id)), provider: p, model: id } as any; } catch (e) { last = e; }
+    try { return { ...(await fn(modelFor(p, id, keys), p, id)), provider: p, model: id } as any; } catch (e) { last = e; }
   }
   throw last;
 }

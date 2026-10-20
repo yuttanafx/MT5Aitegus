@@ -14,6 +14,6 @@ export async function POST(req: Request) {
     const r = await chat(message.slice(0, 500), ctx);
     return Response.json({ text: r.text, provider: r.provider });
   } catch {
-    return Response.json({ text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้าตั้งค่า Vercel' });
+    return Response.json({ text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' });
   }
 }

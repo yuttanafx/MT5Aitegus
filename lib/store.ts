@@ -36,3 +36,16 @@ export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp
   await saveCmds([cmd, ...cmds]);
   return cmd;
 }
+
+// AI provider keys entered from the dashboard. Env vars are used as a fallback.
+export type Keys = Partial<Record<Settings['provider'], string>>;
+const ENV_KEY: Record<Settings['provider'], string | undefined> = {
+  get anthropic() { return process.env.ANTHROPIC_API_KEY; },
+  get openai() { return process.env.OPENAI_API_KEY; },
+  get google() { return process.env.GOOGLE_GENERATIVE_AI_API_KEY; },
+};
+export const getStoredKeys = () => getJSON<Keys>('apikeys', {});
+export async function getKeys(): Promise<Keys> {
+  const saved = await getStoredKeys();
+  return { anthropic: saved.anthropic || ENV_KEY.anthropic, openai: saved.openai || ENV_KEY.openai, google: saved.google || ENV_KEY.google };
+}

@@ -17,6 +17,8 @@ export default function Page() {
   const [reply, setReply] = useState('');
   const [provider, setProvider] = useState('anthropic');
   const [model, setModel] = useState('');
+  const [keyDraft, setKeyDraft] = useState('');
+  const [saved, setSaved] = useState('');
   const modeRef = useRef<Mode>('idle');
   const recRef = useRef<any>(null);
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m); };
@@ -135,6 +137,15 @@ export default function Page() {
           <label className="sub" htmlFor="m">ชื่อโมเดล (เว้นว่างเพื่อใช้ค่าเริ่มต้น)</label>
           <input id="m" value={model} onChange={(e) => setModel(e.target.value)} placeholder="เช่น claude-sonnet-5-5" />
           <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { provider, model }))}>บันทึก</button>
+          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 8 }}>
+            <label className="sub" htmlFor="ak">API key ของ {PROVIDERS.find(([id]) => id === provider)?.[1]}{data?.keyHints?.[provider] ? ` (ตอนนี้: ${data.keyHints[provider]})` : ''}</label>
+            <input id="ak" type="password" autoComplete="off" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder={provider === 'anthropic' ? 'sk-ant-...' : provider === 'openai' ? 'sk-...' : 'AIza...'} />
+            <div className="row">
+              <button className="btn main" disabled={busy || !keyDraft.trim()} onClick={() => act(async () => { await api('/api/keys', { provider, key: keyDraft }); setKeyDraft(''); setSaved('บันทึก key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>บันทึก API key</button>
+              {data?.keys?.[provider] && <button className="btn" disabled={busy} onClick={() => act(async () => { await api('/api/keys', { provider, key: '' }); setSaved('ลบ key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>ลบ key</button>}
+              {saved && <span className="chip ok" role="status">{saved}</span>}
+            </div>
+          </div>
           <div className="mute">ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด</div>
         </section>
       </div>
