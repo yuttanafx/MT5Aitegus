@@ -62,3 +62,5 @@ th{color:var(--mute);font-weight:500;font-size:12px;text-align:left;padding:8px 
 @keyframes orbFlickerGlow{0%{opacity:1;transform:scale(1.12)}22%{opacity:.5;transform:scale(1)}40%{opacity:1;transform:scale(1.15)}63%{opacity:.6;transform:scale(1.03)}82%{opacity:.95;transform:scale(1.1)}}
 @keyframes orbRipple{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.55);opacity:0}}
 @media (prefers-reduced-motion:reduce){.orb-wrap,.orb-glow,.orb-core,.orb-core::before,.orb-wave{animation:none!important}}
+
+input[type=checkbox]{min-height:0;width:20px;height:20px;padding:0;accent-color:var(--accent);flex:none}

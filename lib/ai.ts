@@ -3,7 +3,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
-import { STRATEGIES, STRATEGY_IDS, type Ind } from './strategies';
+import { REGIMES, type Ind } from './strategies';
 import { getSettings, getKeys, type Keys } from './store';
 import type { Settings } from './types';
 
@@ -33,24 +33,24 @@ async function withFallback<T>(fn: (m: any, p: P, id: string) => Promise<T>): Pr
 }
 
 const Decision = z.object({
-  regime: z.enum(['trend_up', 'trend_down', 'range', 'volatile', 'news']),
-  strategy_id: z.enum(STRATEGY_IDS),
+  regime: z.enum(REGIMES),
   confidence: z.number().min(0).max(1),
   reason: z.string().describe('เหตุผลสั้น ๆ ภาษาไทย ไม่เกิน 2 ประโยค'),
 });
 
+// The AI only classifies the market regime. Which strategies run for that regime is decided by the
+// mapping in the dashboard, and entry conditions are checked by the server rules.
 export async function decide(ind: Ind) {
-  const list = STRATEGIES.map((s) => `- ${s.id}: ใช้เมื่อตลาดเป็น ${s.regimes.join('/')}`).join('\n');
   try {
     return await withFallback(async (model) => {
       const { object } = await generateObject({
         model, schema: Decision, temperature: 0,
-        prompt: `จัดสภาพตลาดและเลือกกลยุทธ์จากรายการ หรือ no_trade ถ้าไม่ชัดเจน\nกลยุทธ์:\n${list}\n- no_trade: ไม่เทรด\n\nข้อมูล:\n${JSON.stringify(ind)}`,
+        prompt: `จัดสภาพตลาดจากข้อมูลอินดิเคเตอร์ให้เป็นหนึ่งในนี้\n- trend_up: แนวโน้มขาขึ้นชัด (ADX สูง, EMA20 > EMA50)\n- trend_down: แนวโน้มขาลงชัด (ADX สูง, EMA20 < EMA50)\n- range: ไซด์เวย์ (ADX ต่ำ, EMA แคบ/พันกัน)\n- volatile: ผันผวนผิดปกติ ไม่มีทิศทางชัด (ATR กว้างเมื่อเทียบราคา)\n- news: สัญญาณว่าอยู่ในช่วงข่าวแรง\nถ้าไม่แน่ใจให้ลดค่า confidence\n\nข้อมูล:\n${JSON.stringify(ind)}`,
       });
       return object;
     });
   } catch (e: any) {
-    return { regime: 'volatile' as const, strategy_id: 'no_trade', confidence: 0, reason: `AI ใช้งานไม่ได้: ${String(e?.message ?? e).slice(0, 120)}`, provider: null as any, model: '' };
+    return { regime: 'volatile' as const, confidence: 0, reason: `AI ใช้งานไม่ได้: ${String(e?.message ?? e).slice(0, 120)}`, provider: null as any, model: '' };
   }
 }
 

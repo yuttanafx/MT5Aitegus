@@ -5,6 +5,10 @@ const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, a
 const STATUS: Record<string, string> = { pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' };
 const PROVIDERS = [['anthropic', 'Claude'], ['openai', 'GPT'], ['google', 'Gemini']];
 const REGIME: Record<string, string> = { trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' };
+const REGIME_HINT: Record<string, string> = {
+  trend_up: 'ADX สูง และ EMA20 อยู่เหนือ EMA50', trend_down: 'ADX สูง และ EMA20 อยู่ใต้ EMA50',
+  range: 'ADX ต่ำ ราคาแกว่งในกรอบ', volatile: 'ผันผวนผิดปกติ ไม่มีทิศทางชัด', news: 'ช่วงข่าวแรง',
+};
 const INTERVALS = [1, 3, 5, 10, 15, 30, 60, 120];
 type Mode = 'idle' | 'listening' | 'speaking';
 
@@ -28,6 +32,7 @@ export default function Page() {
   const [issued, setIssued] = useState<{ name: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
+  const [mapDraft, setMapDraft] = useState<Record<string, string[]> | null>(null);
   const [autoVoice, setAutoVoice] = useState(false);
   const lastSeen = useRef<string | null>(null);
   const modeRef = useRef<Mode>('idle');
@@ -67,7 +72,7 @@ export default function Page() {
 
   const load = useCallback(() => api('/api/state').then((d) => {
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15));
+    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setMapDraft((m) => (data ? m : d.settings.map || {}));
   }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (!key) return; load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [key, load]);
@@ -183,9 +188,10 @@ export default function Page() {
         <section className="card">
           <div className="row" style={{ justifyContent: 'space-between' }}><h2>การตัดสินใจล่าสุดของ AI</h2><span className="mute">{d ? `${d.symbol} · ${d.tf} · ${new Date(d.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}</span></div>
           {!d ? <div className="mute">ยังไม่มีข้อมูล รอ EA ส่งแท่งเทียน หรือกดทดสอบด้านล่าง</div> : (<>
-            <div className="row"><span className="chip ok">{d.regime}</span><b style={{ fontSize: 19 }}>{d.strategy}</b></div>
+            <div className="row"><span className="chip ok">{REGIME[d.regime] ?? d.regime}</span><b style={{ fontSize: 19 }}>{d.strategy}</b></div>
             <div><div className="bar"><i style={{ width: Math.round(d.confidence * 100) + '%' }} /></div><div className="mute" style={{ marginTop: 6 }}>ความมั่นใจ {Math.round(d.confidence * 100)}% · {d.provider ?? '-'} {d.model}</div></div>
             <div style={{ fontSize: 14, lineHeight: 1.6 }}>{d.reason}</div>
+            <div className="mute">กลยุทธ์ที่ดึงมาใช้กับสภาพตลาดนี้: {d.candidates?.length ? d.candidates.join(', ') : 'ไม่มี (ไม่เทรด)'}</div>
             {d.eval && <div style={{ fontSize: 14, display: 'grid', gap: 6, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
               {d.eval.results.map((r: any) => <div key={r.text} className="row" style={{ justifyContent: 'space-between' }}><span>{r.text}</span><span className={r.ok ? 'buy' : 'sell'}>{r.ok ? 'ผ่าน' : 'ไม่ผ่าน'}</span></div>)}
             </div>}
@@ -227,6 +233,27 @@ export default function Page() {
           <div className="mute">ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด</div>
         </section>}
       </div>
+
+      {mapDraft && <section className="card">
+        <h2>กลยุทธ์ตามสภาพตลาด</h2>
+        <div className="mute">AI ระบุสภาพตลาดก่อน แล้วระบบดึงกลยุทธ์ที่ติ๊กไว้ในแต่ละสภาพมาตรวจเงื่อนไขเข้าเทรด ถ้าไม่ติ๊กอะไรเลย = ไม่เทรดในสภาพนั้น</div>
+        {Object.keys(REGIME).map((rg) => (
+          <fieldset key={rg} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '10px 14px', margin: 0 }}>
+            <legend><b>{REGIME[rg]}</b> <span className="mute">· {REGIME_HINT[rg]}</span></legend>
+            {(data?.strategies ?? []).map((st: any) => {
+              const on = (mapDraft[rg] ?? []).includes(st.id);
+              return (
+                <label key={st.id} className="row" style={{ padding: '6px 0', cursor: isAdmin ? 'pointer' : 'default' }}>
+                  <input type="checkbox" checked={on} disabled={!isAdmin}
+                    onChange={() => setMapDraft((m) => { const cur = (m ?? {})[rg] ?? []; return { ...(m ?? {}), [rg]: on ? cur.filter((x) => x !== st.id) : [...cur, st.id] }; })} />
+                  <span><b>{st.name}</b> <span className="mute">{st.conds.join(' · ')}</span></span>
+                </label>
+              );
+            })}
+          </fieldset>
+        ))}
+        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { map: mapDraft }))}>บันทึกกลยุทธ์</button></div>}
+      </section>}
 
       <section className="card">
         <h2>คิวคำสั่งส่งเข้า EA</h2>
