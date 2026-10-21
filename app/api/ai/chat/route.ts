@@ -5,7 +5,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  if (!(await who(req))) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  const me = await who(req);
+  if (!me) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  // the real error is shown to the admin only (to find out what is wrong); other users get the generic text
+  const detail = (e: any) => (me.role === 'admin' ? `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]` : '');
   const { message } = await req.json().catch(() => ({ message: '' }));
   if (!message || typeof message !== 'string') return Response.json({ error: 'bad body' }, { status: 400 });
   const [cmds, decision, settings] = await Promise.all([getCmds(), getJSON<any>('decision', null), getSettings()]);
@@ -16,14 +19,14 @@ export async function POST(req: Request) {
     try {
       const r = await macro(message.slice(0, 500), ctx);
       return Response.json({ text: r.text, provider: r.provider, live: r.live });
-    } catch {
-      return Response.json({ text: 'วิเคราะห์เศรษฐกิจไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' });
+    } catch (e) {
+      return Response.json({ text: 'วิเคราะห์เศรษฐกิจไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) });
     }
   }
   try {
     const r = await chat(message.slice(0, 500), ctx);
     return Response.json({ text: r.text, provider: r.provider });
-  } catch {
-    return Response.json({ text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' });
+  } catch (e) {
+    return Response.json({ text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) });
   }
 }

@@ -12,7 +12,7 @@ const ORDER: P[] = ['anthropic', 'openai', 'google'];
 const DEFAULT_MODEL: Record<P, string> = {
   anthropic: process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5',
   openai: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-  google: process.env.GOOGLE_MODEL || 'gemini-2.0-flash',
+  google: process.env.GOOGLE_MODEL || 'gemini-3.5-flash',
 };
 function modelFor(p: P, id: string, k: Keys) {
   if (p === 'openai') return createOpenAI({ apiKey: k.openai })(id);
@@ -71,6 +71,8 @@ export async function chat(message: string, context: string) {
 // ---------------------------------------------------------------------------------------------
 export const MACRO_RE = /เศรษฐกิจ|เงินเฟ้อ|ดอกเบี้ย|เฟด|ธนาคารกลาง|ถดถอย|ว่างงาน|พันธบัตร|ค่าเงิน|ดอลลาร์|ราคาทอง|ทองคำ|น้ำมัน|ข่าวเศรษฐกิจ|ปัจจัยพื้นฐาน|\b(fed|fomc|cpi|ppi|nfp|gdp|pce|macro|inflation|recession|yield|rate (cut|hike)|dxy|tariff)\b/i;
 
+const NO_LIVE_NOTE = ' (หมายเหตุ: ครั้งนี้ไม่ได้ค้นข้อมูลสด ตัวเลขล่าสุดอาจไม่ครบ แนะนำเช็กปฏิทินเศรษฐกิจอีกครั้ง)';
+
 function macroSystem(context: string, live: boolean) {
   const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long', timeZone: 'Asia/Bangkok' });
   return [
@@ -86,28 +88,36 @@ function macroSystem(context: string, live: boolean) {
 // Google: call the REST API directly with the google_search tool (the installed SDK only knows the
 // legacy tool name for non-"gemini-2" models, which newer Gemini versions may reject).
 async function geminiSearch(key: string, id: string, system: string, message: string) {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(id)}:generateContent`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: message }] }],
-      tools: [{ google_search: {} }],
-      generationConfig: { temperature: 0.3 },
-    }),
-    signal: AbortSignal.timeout(25_000),
-  });
-  const j: any = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j?.error?.message ?? `Gemini HTTP ${r.status}`);
-  const text = (j?.candidates?.[0]?.content?.parts ?? []).map((x: any) => x?.text ?? '').join('').trim();
-  if (!text) throw new Error('Gemini ไม่ส่งข้อความกลับมา');
-  return text;
+  const call = async (search: boolean) => {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(id)}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: message }] }],
+        ...(search ? { tools: [{ google_search: {} }] } : {}),
+        generationConfig: { temperature: 0.3 },
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Gemini ${r.status}: ${j?.error?.message ?? 'error'}`);
+    const text = (j?.candidates?.[0]?.content?.parts ?? []).map((x: any) => x?.text ?? '').join('').trim();
+    if (!text) throw new Error('Gemini ไม่ส่งข้อความกลับมา (อาจถูกตัวกรองความปลอดภัยบล็อก)');
+    return text;
+  };
+  try { return { text: await call(true), live: true }; }
+  catch (e) {
+    // search tool rejected for this model/key -> answer without live search rather than failing outright
+    try { return { text: await call(false), live: false }; } catch { throw e; }
+  }
 }
 
 export async function macro(message: string, context: string) {
   return withFallback(async (_m, p, id, keys) => {
     if (p === 'google') {
-      return { text: await geminiSearch(keys.google!, id, macroSystem(context, true), message), live: true };
+      const g = await geminiSearch(keys.google!, id, macroSystem(context, true), message);
+      return g.live ? g : { text: g.text + NO_LIVE_NOTE, live: false };
     }
     if (p === 'openai') {
       const { text } = await generateText({
@@ -119,6 +129,6 @@ export async function macro(message: string, context: string) {
     }
     // Anthropic (installed SDK has no web-search tool): answer from the model's own knowledge and say so.
     const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false), prompt: message });
-    return { text: text.trim() + ' (หมายเหตุ: โมเดลนี้ไม่ได้ค้นข้อมูลสด ตัวเลขล่าสุดอาจไม่ครบ แนะนำเช็กปฏิทินเศรษฐกิจอีกครั้ง)', live: false };
+    return { text: text.trim() + NO_LIVE_NOTE, live: false };
   });
 }
