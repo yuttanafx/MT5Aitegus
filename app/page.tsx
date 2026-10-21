@@ -9,6 +9,7 @@ const REGIME_HINT: Record<string, string> = {
   trend_up: 'ADX สูง และ EMA20 อยู่เหนือ EMA50', trend_down: 'ADX สูง และ EMA20 อยู่ใต้ EMA50',
   range: 'ADX ต่ำ ราคาแกว่งในกรอบ', volatile: 'ผันผวนผิดปกติ ไม่มีทิศทางชัด', news: 'ช่วงข่าวแรง',
 };
+const GRID_COLS: [string, string, number][] = [['lot', 'Lot เริ่ม', 0.01], ['lotMult', 'Lot x', 0.1], ['step', 'Step (pts)', 50], ['stepW', 'Step W', 0.1], ['stepA', 'Step A', 0.1], ['max', 'Max ไม้', 1], ['tpN', 'TP ปกติ $', 0.5], ['tpO', 'TP เก่า $', 0.5], ['recMult', 'Rec x', 0.1]];
 const INTERVALS = [1, 3, 5, 10, 15, 30, 60, 120];
 type Mode = 'idle' | 'listening' | 'speaking';
 
@@ -32,6 +33,7 @@ export default function Page() {
   const [issued, setIssued] = useState<{ name: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
+  const [grid, setGrid] = useState<{ profiles: Record<string, any>; map: Record<string, string> } | null>(null);
   const [mapDraft, setMapDraft] = useState<Record<string, string[]> | null>(null);
   const [autoVoice, setAutoVoice] = useState(false);
   const lastSeen = useRef<string | null>(null);
@@ -72,7 +74,7 @@ export default function Page() {
 
   const load = useCallback(() => api('/api/state').then((d) => {
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setMapDraft((m) => (data ? m : d.settings.map || {}));
+    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
   }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { if (!key) return; load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [key, load]);
@@ -100,7 +102,7 @@ export default function Page() {
     lastSeen.current = sig;
     if (prev === null || prev === sig || dd.src !== 'ea' || !autoVoice || dd.confidence === 0 || modeRef.current !== 'idle') return;
     const text = `${dd.symbol} ตลาดเปลี่ยนเป็น${REGIME[dd.regime] ?? dd.regime} ` +
-      (dd.strategy_id === 'no_trade' ? 'ยังไม่เข้าเทรด ' : `AI เลือกกลยุทธ์ ${dd.strategy}${dd.pass ? ' และผ่านเงื่อนไขเข้าเทรด' : ' แต่ยังไม่ผ่านเงื่อนไข'} `) + (dd.reason || '');
+      (dd.kind === 'grid' ? `สลับไปใช้โปรไฟล์ ${dd.strategy} ` : dd.strategy_id === 'no_trade' ? 'ยังไม่เข้าเทรด ' : `AI เลือกกลยุทธ์ ${dd.strategy}${dd.pass ? ' และผ่านเงื่อนไขเข้าเทรด' : ' แต่ยังไม่ผ่านเงื่อนไข'} `) + (dd.reason || '');
     setHeard('(แจ้งเตือนอัตโนมัติ)'); setReply(text); setMode('speaking'); speak(text);
   }, [data, autoVoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -195,7 +197,7 @@ export default function Page() {
             {d.eval && <div style={{ fontSize: 14, display: 'grid', gap: 6, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
               {d.eval.results.map((r: any) => <div key={r.text} className="row" style={{ justifyContent: 'space-between' }}><span>{r.text}</span><span className={r.ok ? 'buy' : 'sell'}>{r.ok ? 'ผ่าน' : 'ไม่ผ่าน'}</span></div>)}
             </div>}
-            <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>
+            {d.kind === 'grid' ? <span className="chip ok">โปรไฟล์กริดของ EA</span> : <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>}
           </>)}
           {isAdmin && <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <label className="sub" htmlFor="iv">ให้ AI วิเคราะห์ทุก</label>
@@ -253,6 +255,37 @@ export default function Page() {
           </fieldset>
         ))}
         {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { map: mapDraft }))}>บันทึกกลยุทธ์</button></div>}
+      </section>}
+
+      {grid && <section className="card">
+        <h2>โปรไฟล์กริดสำหรับ EA กริด</h2>
+        <div className="mute">AI ระบุสภาพตลาด แล้ว EA กริด (Terravolteco SmartGold) จะดึงโปรไฟล์ของสภาพนั้นไปตั้งค่าตัวเองอัตโนมัติ ค่าถูกจำกัดเพดานทั้งฝั่งเซิร์ฟเวอร์และใน EA โปรไฟล์ที่ปิดทั้ง Buy/Sell = หยุดเปิดชุดใหม่ (ชุดที่เปิดอยู่ยังจัดการต่อ โดย Max ไม้ที่ต่ำจะหยุดการถัวเพิ่ม)</div>
+        {Object.keys(REGIME).map((rg) => (
+          <div key={rg} className="row">
+            <label className="sub" htmlFor={'g-' + rg} style={{ minWidth: 130 }}>{REGIME[rg]}</label>
+            <select id={'g-' + rg} disabled={!isAdmin} value={grid.map[rg] ?? ''} onChange={(e) => setGrid((g) => g && { ...g, map: { ...g.map, [rg]: e.target.value } })}>
+              {Object.values(grid.profiles).map((pf: any) => <option key={pf.id} value={pf.id}>{pf.name}</option>)}
+            </select>
+          </div>
+        ))}
+        <div className="tblwrap"><table>
+          <thead><tr><th>โปรไฟล์</th><th>Buy</th><th>Sell</th>{GRID_COLS.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
+          <tbody>
+            {Object.values(grid.profiles).map((pf: any) => (
+              <tr key={pf.id}>
+                <td>{pf.name}</td>
+                {(['buy', 'sell'] as const).map((k) => (
+                  <td key={k}><input type="checkbox" aria-label={pf.name + ' ' + k} disabled={!isAdmin} checked={!!pf[k]} onChange={() => setGrid((g) => g && { ...g, profiles: { ...g.profiles, [pf.id]: { ...pf, [k]: !pf[k] } } })} /></td>
+                ))}
+                {GRID_COLS.map(([k, label, st]) => (
+                  <td key={k}><input type="number" aria-label={pf.name + ' ' + label} style={{ width: 82 }} step={st} disabled={!isAdmin} value={pf[k]}
+                    onChange={(e) => setGrid((g) => g && { ...g, profiles: { ...g.profiles, [pf.id]: { ...pf, [k]: Number(e.target.value) } } })} /></td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { gridProfiles: grid.profiles, gridMap: grid.map }))}>บันทึกโปรไฟล์กริด</button></div>}
       </section>}
 
       <section className="card">

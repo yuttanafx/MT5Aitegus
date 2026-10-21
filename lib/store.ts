@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type { Cmd, Settings } from './types';
 import { riskCheck } from './risk';
 import { DEFAULT_MAP } from './strategies';
+import { DEFAULT_GRID_MAP, DEFAULT_PROFILES } from './profiles';
 
 const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
 const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
@@ -18,7 +19,7 @@ export async function setJSON(k: string, v: any) {
 }
 
 export const defaultSettings = (): Settings => ({
-  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, map: DEFAULT_MAP,
+  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, map: DEFAULT_MAP, gridProfiles: DEFAULT_PROFILES, gridMap: DEFAULT_GRID_MAP,
 });
 export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {})) });
 export const getCmds = () => getJSON<Cmd[]>('cmds', []);
