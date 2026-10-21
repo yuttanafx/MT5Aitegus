@@ -41,6 +41,55 @@ export default function Page() {
   const recRef = useRef<any>(null);
   const setMode = (m: Mode) => { modeRef.current = m; setModeState(m); };
 
+  // ---- Floating orb ----
+  // 'pip'  = Document Picture-in-Picture: a small always-on-top window you can drag over the MT5 chart (Chrome/Edge desktop).
+  // 'page' = fallback for other browsers: a draggable orb that floats inside this page only.
+  const [orb, setOrb] = useState<'off' | 'pip' | 'page'>('off');
+  const pipRef = useRef<Window | null>(null);
+  const toggleMicRef = useRef<(from?: Window) => void>(() => {});
+  const loadRef = useRef<() => void>(() => {});
+
+  const closeOrb = () => {
+    const w = pipRef.current; pipRef.current = null;
+    try { w?.close(); } catch {}
+    setOrb('off');
+  };
+  const buildPip = (w: Window) => {
+    const doc = w.document;
+    for (const ss of Array.from(document.styleSheets)) { // reuse the page's own orb styles
+      try { const st = doc.createElement('style'); st.textContent = Array.from(ss.cssRules).map((r) => r.cssText).join('\n'); doc.head.appendChild(st); }
+      catch { if (ss.href) { const l = doc.createElement('link'); l.rel = 'stylesheet'; l.href = ss.href; doc.head.appendChild(l); } }
+    }
+    doc.documentElement.dataset.theme = document.documentElement.dataset.theme || 'dark';
+    doc.title = 'AI Orb';
+    const ov = doc.createElement('style');
+    ov.textContent = 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg)}body{display:grid;place-items:center;cursor:pointer;user-select:none}.orb-wrap{width:100px;height:100px;margin:0}.orb-glow{inset:-26px}';
+    doc.head.appendChild(ov);
+    doc.body.innerHTML = '<div id="pipOrb" class="orb-wrap idle" role="button" aria-label="คุยกับ AI"><div class="orb-glow"></div><div class="orb-wave"></div><div class="orb-wave w2"></div><div class="orb-ring"></div><div class="orb-core"></div></div>';
+    doc.body.addEventListener('click', () => toggleMicRef.current(w));
+  };
+  const openOrb = async () => {
+    if (orb !== 'off' || pipRef.current) return;
+    const dpip = (window as any).documentPictureInPicture;
+    if (!dpip?.requestWindow) { setOrb('page'); return; }          // browser has no Document PiP -> in-page orb
+    try {
+      const w: Window = await dpip.requestWindow({ width: 200, height: 200 });
+      buildPip(w);
+      pipRef.current = w;
+      w.addEventListener('pagehide', () => { if (pipRef.current === w) { pipRef.current = null; setOrb('off'); } });
+      // the popup window is visible, so its timer is not throttled like the (hidden) dashboard tab
+      w.setInterval(() => loadRef.current(), 5000);
+      setOrb('pip');
+    } catch { setOrb('page'); }                                      // blocked / no user gesture -> in-page orb
+  };
+  useEffect(() => () => { try { pipRef.current?.close(); } catch {} }, []);
+  useEffect(() => { // keep the popup in sync with the dashboard (status + theme)
+    const w = pipRef.current; if (!w) return;
+    const el = w.document.getElementById('pipOrb'); if (el) el.className = 'orb-wrap ' + mode;
+    w.document.documentElement.dataset.theme = theme;
+    w.document.title = mode === 'listening' ? 'กำลังฟัง…' : mode === 'speaking' ? 'กำลังตอบ…' : 'AI Orb';
+  }, [mode, theme, orb]);
+
   useEffect(() => {
     setKey(sessionStorage.getItem('hubkey') || '');
     setAutoVoice(localStorage.getItem('autovoice') === '1');
@@ -56,7 +105,7 @@ export default function Page() {
     setTheme(t); document.documentElement.dataset.theme = t;
     try { localStorage.setItem('theme', t); } catch {}
   };
-  const logout = () => { sessionStorage.removeItem('hubkey'); setKey(''); setData(null); setUsers([]); setIssued(null); lastSeen.current = null; };
+  const logout = () => { closeOrb(); sessionStorage.removeItem('hubkey'); setKey(''); setData(null); setUsers([]); setIssued(null); lastSeen.current = null; };
   const login = async () => {
     setLoginErr('');
     const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: draft }) });
@@ -77,7 +126,8 @@ export default function Page() {
     setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
   }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { if (!key) return; load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, [key, load]);
+  loadRef.current = load;
+  useEffect(() => { if (!key) return; load(); const t = setInterval(() => { if (!pipRef.current) load(); }, 5000); return () => clearInterval(t); }, [key, load]);
 
   const speak = (text: string) => {
     const done = () => { if (modeRef.current === 'speaking') setMode('idle'); };
@@ -108,19 +158,30 @@ export default function Page() {
 
   const toggleAutoVoice = () => {
     const v = !autoVoice; setAutoVoice(v); localStorage.setItem('autovoice', v ? '1' : '0');
+    if (v) openOrb(); else closeOrb();   // must run inside the click so the browser allows the popup
     if (v) { setReply('เปิดเสียงแจ้งเตือนอัตโนมัติแล้ว จะพูดเมื่อตลาดมีแนวโน้มใหม่'); speak('เปิดเสียงแจ้งเตือนอัตโนมัติแล้ว'); setMode('speaking'); }
   };
 
-  const toggleMic = () => {
+  const toggleMic = (from?: Window) => {
     if (modeRef.current !== 'idle') { try { recRef.current?.stop(); speechSynthesis.cancel(); } catch {} setMode('idle'); return; }
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const pick = (w: any) => w?.SpeechRecognition || w?.webkitSpeechRecognition;
+    const start = (SR: any, canRetry: boolean) => {
+      const r = new SR(); r.lang = 'th-TH';
+      r.onresult = (e: any) => ask(e.results[0][0].transcript);
+      r.onerror = (e: any) => {
+        const mainSR = pick(window);
+        if (canRetry && mainSR && mainSR !== SR && e?.error !== 'no-speech' && e?.error !== 'aborted') { start(mainSR, false); return; }
+        setReply('ไม่ได้รับเสียงจากไมค์ ตรวจสอบสิทธิ์ไมโครโฟน'); setMode('idle');
+      };
+      r.onend = () => { if (modeRef.current === 'listening') setMode('idle'); };
+      recRef.current = r; setMode('listening'); r.start();
+    };
+    // started from the popup -> use the popup window's recognizer first (it is the visible, focused window)
+    const SR = pick(from) || pick(window);
     if (!SR) { setReply('เบราว์เซอร์นี้ไม่รองรับการฟังเสียง ใช้ปุ่มคำถามแทนได้'); return; }
-    const r = new SR(); r.lang = 'th-TH';
-    r.onresult = (e: any) => ask(e.results[0][0].transcript);
-    r.onerror = () => { setReply('ไม่ได้รับเสียงจากไมค์ ตรวจสอบสิทธิ์ไมโครโฟน'); setMode('idle'); };
-    r.onend = () => { if (modeRef.current === 'listening') setMode('idle'); };
-    recRef.current = r; setMode('listening'); r.start();
+    start(SR, !!from && SR !== pick(window));
   };
+  toggleMicRef.current = toggleMic;
 
   const act = async (fn: () => Promise<any>) => { setBusy(true); try { await fn(); await load(); } catch (e: any) { setErr(e.message); } setBusy(false); };
   const d = data?.decision;
@@ -178,10 +239,11 @@ export default function Page() {
           <div className="bubble"><div className="mute">คุณ</div>{heard || 'ลองถามว่า "ตอนนี้ใช้กลยุทธ์อะไร"'}</div>
           <div className="bubble ai"><div className="mute">AI</div>{reply || 'AI จะตอบที่นี่'}</div>
           <div className="row">
-            <button className="btn main" onClick={toggleMic}>{mode === 'idle' ? 'คุยกับ AI' : 'หยุด'}</button>
+            <button className="btn main" onClick={() => toggleMic()}>{mode === 'idle' ? 'คุยกับ AI' : 'หยุด'}</button>
             <button className="btn" onClick={() => ask('ตอนนี้ใช้กลยุทธ์อะไร')}>ตอนนี้ใช้กลยุทธ์อะไร</button>
             <button className="btn" onClick={() => ask('สรุปคำสั่งล่าสุด')}>สรุปคำสั่งล่าสุด</button>
             <button className={'btn ' + (autoVoice ? 'main' : '')} aria-pressed={autoVoice} onClick={toggleAutoVoice}>{autoVoice ? '🔔 เสียงแจ้งเตือน: เปิด' : '🔕 เสียงแจ้งเตือน: ปิด'}</button>
+            <button className={'btn ' + (orb !== 'off' ? 'main' : '')} aria-pressed={orb !== 'off'} onClick={() => (orb === 'off' ? openOrb() : closeOrb())}>{orb === 'off' ? '🔮 เปิดลูกกลมลอย' : '🔮 ปิดลูกกลมลอย'}</button>
           </div>
         </div>
       </section>
@@ -337,6 +399,37 @@ export default function Page() {
           </tbody>
         </table></div>
       </section>}
+      {orb === 'page' && <FloatOrb mode={mode} onTap={() => toggleMic()} onClose={closeOrb} />}
     </main>
+  );
+}
+
+// Fallback orb for browsers without Document Picture-in-Picture: drag it anywhere inside this page, tap it to talk.
+function FloatOrb({ mode, onTap, onClose }: { mode: Mode; onTap: () => void; onClose: () => void }) {
+  const SIZE = 100;
+  const clamp = (p: { x: number; y: number }) => ({ x: Math.min(Math.max(0, p.x), Math.max(0, window.innerWidth - SIZE)), y: Math.min(Math.max(0, p.y), Math.max(0, window.innerHeight - SIZE)) });
+  const [pos, setPos] = useState(() => {
+    try { const p = JSON.parse(localStorage.getItem('orbpos') || 'null'); if (p && typeof p.x === 'number' && typeof p.y === 'number') return clamp(p); } catch {}
+    return clamp({ x: window.innerWidth - SIZE - 28, y: window.innerHeight - SIZE - 48 });
+  });
+  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean; last: { x: number; y: number } } | null>(null);
+  useEffect(() => { const f = () => setPos((p) => clamp(p)); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const down = (e: React.PointerEvent) => { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, sx: e.clientX, sy: e.clientY, moved: false, last: pos }; };
+  const move = (e: React.PointerEvent) => {
+    const d = drag.current; if (!d) return;
+    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return;
+    d.moved = true; d.last = clamp({ x: e.clientX - d.dx, y: e.clientY - d.dy }); setPos(d.last);
+  };
+  const up = () => {
+    const d = drag.current; drag.current = null; if (!d) return;
+    if (d.moved) { try { localStorage.setItem('orbpos', JSON.stringify(d.last)); } catch {} } else onTap();
+  };
+  return (
+    <div className="orb-float" style={{ left: pos.x, top: pos.y }} role="button" tabIndex={0} aria-label="ลูกกลม AI: แตะเพื่อคุย ลากเพื่อย้าย"
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; }}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }}>
+      <div className={'orb-wrap ' + mode}><div className="orb-glow" /><div className="orb-wave" /><div className="orb-wave w2" /><div className="orb-ring" /><div className="orb-core" /></div>
+      <button className="orb-x" aria-label="ปิดลูกกลมลอย" onPointerDown={(e) => e.stopPropagation()} onClick={onClose}>×</button>
+    </div>
   );
 }

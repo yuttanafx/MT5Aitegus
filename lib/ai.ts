@@ -21,13 +21,13 @@ function modelFor(p: P, id: string, k: Keys) {
 }
 
 // Tries the selected provider first, then the other providers that have a key.
-async function withFallback<T>(fn: (m: any, p: P, id: string) => Promise<T>): Promise<T & { provider: P; model: string }> {
+async function withFallback<T>(fn: (m: any, p: P, id: string, k: Keys) => Promise<T>): Promise<T & { provider: P; model: string }> {
   const [s, keys] = await Promise.all([getSettings(), getKeys()]);
   const chain = [s.provider, ...ORDER.filter((p) => p !== s.provider)].filter((p) => !!keys[p]);
   let last: any = new Error('ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
   for (const p of chain) {
     const id = p === s.provider && s.model ? s.model : DEFAULT_MODEL[p];
-    try { return { ...(await fn(modelFor(p, id, keys), p, id)), provider: p, model: id } as any; } catch (e) { last = e; }
+    try { return { ...(await fn(modelFor(p, id, keys), p, id, keys)), provider: p, model: id } as any; } catch (e) { last = e; }
   }
   throw last;
 }
@@ -62,5 +62,63 @@ export async function chat(message: string, context: string) {
       prompt: message,
     });
     return { text };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Economic / macro trend analysis (chat only). Advisory text: it never touches orders, strategies,
+// grid profiles or any trading setting. Live web search is used when the provider supports it.
+// ---------------------------------------------------------------------------------------------
+export const MACRO_RE = /เศรษฐกิจ|เงินเฟ้อ|ดอกเบี้ย|เฟด|ธนาคารกลาง|ถดถอย|ว่างงาน|พันธบัตร|ค่าเงิน|ดอลลาร์|ราคาทอง|ทองคำ|น้ำมัน|ข่าวเศรษฐกิจ|ปัจจัยพื้นฐาน|\b(fed|fomc|cpi|ppi|nfp|gdp|pce|macro|inflation|recession|yield|rate (cut|hike)|dxy|tariff)\b/i;
+
+function macroSystem(context: string, live: boolean) {
+  const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long', timeZone: 'Asia/Bangkok' });
+  return [
+    `คุณคือนักวิเคราะห์เศรษฐกิจมหภาคของระบบเทรด MT5 วันนี้คือ ${today} ตอบภาษาไทย ไม่ใช้ markdown เพราะจะถูกอ่านออกเสียง`,
+    'ตอบ 4-6 ประโยค เรียงตามนี้: ภาพรวมแนวโน้ม → ปัจจัยหลักที่ขับเคลื่อน (เช่น ดอกเบี้ย เงินเฟ้อ ตลาดแรงงาน ค่าเงินดอลลาร์ ราคาพลังงาน) → ผลที่น่าจะมีต่อสินทรัพย์ที่ผู้ใช้ถาม หรือสินทรัพย์ที่ระบบกำลังเทรดอยู่ → สิ่งที่ควรระวัง/ตัวเลขข่าวที่จะออก',
+    live ? 'ใช้ข้อมูลล่าสุดจากการค้นหา และบอกช่วงเวลาของข้อมูลที่อ้างถึง' : 'คุณไม่มีข้อมูลเรียลไทม์ ให้พูดถึงแนวโน้มเชิงโครงสร้างและปัจจัยที่ต้องจับตา',
+    'ห้ามแต่งตัวเลขหรือวันที่ ถ้าไม่แน่ใจให้บอกว่าไม่แน่ใจ ห้ามรับประกันกำไร ห้ามสั่งให้ซื้อหรือขายตรง ๆ ให้พูดเป็นมุมมองและความเสี่ยง',
+    'นี่เป็นการวิเคราะห์เพื่อประกอบการตัดสินใจเท่านั้น ไม่เปลี่ยนคำสั่งหรือการตั้งค่าของระบบเทรด',
+    context,
+  ].join('\n');
+}
+
+// Google: call the REST API directly with the google_search tool (the installed SDK only knows the
+// legacy tool name for non-"gemini-2" models, which newer Gemini versions may reject).
+async function geminiSearch(key: string, id: string, system: string, message: string) {
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(id)}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: message }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.3 },
+    }),
+    signal: AbortSignal.timeout(25_000),
+  });
+  const j: any = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error?.message ?? `Gemini HTTP ${r.status}`);
+  const text = (j?.candidates?.[0]?.content?.parts ?? []).map((x: any) => x?.text ?? '').join('').trim();
+  if (!text) throw new Error('Gemini ไม่ส่งข้อความกลับมา');
+  return text;
+}
+
+export async function macro(message: string, context: string) {
+  return withFallback(async (_m, p, id, keys) => {
+    if (p === 'google') {
+      return { text: await geminiSearch(keys.google!, id, macroSystem(context, true), message), live: true };
+    }
+    if (p === 'openai') {
+      const { text } = await generateText({
+        model: createOpenAI({ apiKey: keys.openai }).responses(id), temperature: 0.3,
+        tools: { web_search_preview: createOpenAI({ apiKey: keys.openai }).tools.webSearchPreview({}) },
+        system: macroSystem(context, true), prompt: message,
+      });
+      return { text, live: true };
+    }
+    // Anthropic (installed SDK has no web-search tool): answer from the model's own knowledge and say so.
+    const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false), prompt: message });
+    return { text: text.trim() + ' (หมายเหตุ: โมเดลนี้ไม่ได้ค้นข้อมูลสด ตัวเลขล่าสุดอาจไม่ครบ แนะนำเช็กปฏิทินเศรษฐกิจอีกครั้ง)', live: false };
   });
 }

@@ -64,3 +64,11 @@ th{color:var(--mute);font-weight:500;font-size:12px;text-align:left;padding:8px 
 @media (prefers-reduced-motion:reduce){.orb-wrap,.orb-glow,.orb-core,.orb-core::before,.orb-wave{animation:none!important}}
 
 input[type=checkbox]{min-height:0;width:20px;height:20px;padding:0;accent-color:var(--accent);flex:none}
+
+/* floating orb (in-page fallback) */
+.orb-float{position:fixed;z-index:60;width:100px;height:100px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.orb-float:active{cursor:grabbing}
+.orb-float .orb-wrap{width:100px;height:100px;margin:0;pointer-events:none}
+.orb-float .orb-glow{inset:-26px}
+.orb-x{position:absolute;top:-8px;right:-8px;width:26px;height:26px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--text);font:inherit;font-size:15px;line-height:1;cursor:pointer;opacity:.55}
+.orb-float:hover .orb-x,.orb-x:focus-visible{opacity:1}
