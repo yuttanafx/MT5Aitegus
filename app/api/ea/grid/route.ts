@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
 import { DEFAULT_GRID_MAP, DEFAULT_PROFILES } from '@/lib/profiles';
 import { ak, getJSON, getSettings, setJSON } from '@/lib/store';
-import { regimeFor } from '@/lib/regime';
+import { externalRegime, regimeFor, symKey } from '@/lib/regime';
+import { regimeFromBars } from '@/lib/chart';
+import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import { evKey, newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -10,6 +12,7 @@ export const maxDuration = 30;
 const Body = z.object({
   symbol: z.string(), tf: z.string(), price: z.coerce.number(), adx: z.coerce.number(), rsi: z.coerce.number(),
   atr: z.coerce.number().positive(), ema20: z.coerce.number(), ema50: z.coerce.number(),
+  bars: z.array(z.tuple([z.number(), z.number(), z.number(), z.number(), z.number()])).max(300).optional(), // candles from the EA: [time,o,h,l,c]
 });
 
 // The grid EA calls this. The AI only names the market regime; the grid profile for that regime
@@ -28,6 +31,11 @@ export async function POST(req: Request) {
   let st = await getJSON<any>(key, null);
   await noteSymbol(ind.symbol);
   const nw = await newsFor(ind.symbol, settings);   // cheap (cached calendar) and checked on every call, so the switch happens within one EA push
+    // candles are always stored (the dashboard draws the chart from them), whatever the regime source is
+  const bars = p.data.bars && p.data.bars.length >= 2 ? p.data.bars : null;
+  if (bars) await setJSON(`bars:${symKey(ind.symbol)}:${ind.tf}`, { ts: Date.now(), bars: bars.slice(-150) });
+  const useExt = settings.regimeSource === 'webhook' || settings.regimeSource === 'both';
+  const ext = !useExt ? null : await externalRegime(ind.symbol, acct);   // regime sent by a TradingView alert
   const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
     const pid0 = settings.gridMap[r.regime] ?? DEFAULT_GRID_MAP[r.regime] ?? 'defensive';
     const prof = settings.gridProfiles[pid0] ?? DEFAULT_PROFILES.defensive;
@@ -45,6 +53,37 @@ export async function POST(req: Request) {
       await setJSON(key, st);
       await writeDecision({ ...st, model: 'news-guard' });
     }
+  } else if (settings.regimeSource === 'tradingview' && await (async () => { // regime pulled from TradingView by the server (no Pine, no webhook)
+    const t = await fetchTech(ind.symbol, ind.tf);
+    if (!t) return false;
+    const regime = regimeFromTech(t, st?.src === 'tv' ? st.regime : undefined);
+    if (!st || st.src !== 'tv' || st.regime !== regime || st.newsId) {
+      st = { regime, confidence: 0.9, reason: `จาก TradingView (${t.ticker}, ${ind.tf}): ADX ${t.adx.toFixed(1)}, EMA20 ${t.ema20 >= t.ema50 ? 'สูงกว่า' : 'ต่ำกว่า'} EMA50`, hold: false, ts: Date.now(), src: 'tv' };
+      await setJSON(key, st);
+      await writeDecision({ ...st, model: 'tradingview' });
+    }
+    return true;
+  })()) { /* st already updated above */
+  } else if (settings.regimeSource === 'chart' || settings.regimeSource === 'tradingview') { // also the fallback when TradingView cannot be reached // regime computed by fixed rules from the EA's candles: no AI call, no TradingView
+    const r = bars ? regimeFromBars(bars as any, st?.src === 'chart' ? st.regime : undefined) : null;
+    if (r) {
+      if (!st || st.src !== 'chart' || st.regime !== r.regime || st.newsId) {
+        st = { regime: r.regime, confidence: 0.9, reason: `คำนวณจากกราฟ: ADX ${r.adx.toFixed(1)}, EMA20 ${r.ema20 >= r.ema50 ? 'สูงกว่า' : 'ต่ำกว่า'} EMA50`, hold: false, ts: Date.now(), src: 'chart' };
+        await setJSON(key, st);
+        await writeDecision({ ...st, model: 'chart-rules' });
+      }
+    } else { // no (or too few) candles: keep the EA's current settings
+      st = { ...(st ?? { regime: 'volatile', confidence: 0, reason: 'รอข้อมูลกราฟจาก EA (ต้องใช้ EA เวอร์ชันใหม่)', ts: Date.now() }), hold: true };
+    }
+  } else if (ext) { // webhook regime wins while it is still valid (no AI call)
+    if (st?.extTs !== ext.ts || st?.newsId) {
+      st = { regime: ext.regime, confidence: ext.confidence, reason: 'สภาพตลาดจาก TradingView webhook', hold: false, ts: ext.ts, extTs: ext.ts };
+      await setJSON(key, st);
+      await writeDecision({ ...st, model: 'webhook' });
+    }
+  } else if (settings.regimeSource === 'webhook') { // webhook only: nothing valid yet -> EA keeps its current settings, no AI cost
+    st = st ?? { regime: 'volatile', confidence: 0, reason: 'รอสัญญาณสภาพตลาดจาก webhook', hold: true, ts: Date.now() };
+    if (st.extTs === undefined) st = { ...st, hold: true };
   } else if (!st || st.newsId || st.ts + settings.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
     const d = await regimeFor(ind, settings.intervalMin);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);

@@ -8,6 +8,7 @@ input string          AI_Url          = "https://your-app.vercel.app"; // Signal
 input string          AI_EAKey        = "";                             // your EA key (the admin gives it to you; it only works on your MT5 account number)
 input ENUM_TIMEFRAMES AI_TF           = PERIOD_M15;                     // timeframe whose indicators are sent to the AI
 input int             AI_PushSeconds  = 60;                             // how often to ask the server (server throttles by its own interval)
+input int             AI_Bars         = 150;                            // candles sent to the hub for its chart and rule-based regime (60-300)
 input double          AI_CapStartLot  = 0.10;                           // safety caps: the EA never applies more than these, whatever the server says
 input double          AI_CapLotMult   = 2.0;
 input int             AI_CapMaxOrders = 12;
@@ -149,8 +150,20 @@ void AI_OnTick()
    if(!AI_Val(aiH_adx, adx) || !AI_Val(aiH_rsi, rsi) || !AI_Val(aiH_atr, atr) || !AI_Val(aiH_e20, e20) || !AI_Val(aiH_e50, e50) || atr <= 0)
    { aiStatus = "AI: indicators not ready yet"; AI_ShowStatus(); return; }
 
-   string body = StringFormat("{\"symbol\":\"%s\",\"tf\":\"%s\",\"price\":%.5f,\"adx\":%.2f,\"rsi\":%.2f,\"atr\":%.5f,\"ema20\":%.5f,\"ema50\":%.5f}",
+   string body = StringFormat("{\"symbol\":\"%s\",\"tf\":\"%s\",\"price\":%.5f,\"adx\":%.2f,\"rsi\":%.2f,\"atr\":%.5f,\"ema20\":%.5f,\"ema50\":%.5f",
                               _Symbol, StringSubstr(EnumToString(AI_TF), 7), SymbolInfoDouble(_Symbol, SYMBOL_BID), adx, rsi, atr, e20, e50);
+   // closed candles of AI_TF, oldest first: [time,open,high,low,close]
+   MqlRates rt[];
+   int want = (int)MathMax(60, MathMin(AI_Bars, 300));
+   int got = CopyRates(_Symbol, AI_TF, 1, want, rt);
+   if(got >= 60)
+   {
+      string bars = "";
+      for(int i = 0; i < got; i++)
+         bars += (i > 0 ? "," : "") + StringFormat("[%I64d,%.5f,%.5f,%.5f,%.5f]", (long)rt[i].time, rt[i].open, rt[i].high, rt[i].low, rt[i].close);
+      body += ",\"bars\":[" + bars + "]";
+   }
+   body += "}";
    string resp;
    if(!AI_Request(body, resp)) { AI_ShowStatus(); return; }
 

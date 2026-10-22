@@ -1,8 +1,8 @@
-:root{--bg:#0E1116;--panel:#161B22;--line:#232A33;--text:#E6EAF0;--mute:#8B95A3;--accent:#2DD4BF;--warn:#FB923C;
+:root{--up:#2DD4BF;--down:#FB7185;--bg:#0E1116;--panel:#161B22;--line:#232A33;--text:#E6EAF0;--mute:#8B95A3;--accent:#2DD4BF;--warn:#FB923C;
   --page:radial-gradient(ellipse at 70% 30%,#0B1030 0%,#05070D 60%,#020308 100%);--card:rgba(14,18,27,.78);--field:#0E1116;--chip:#1B2330;--on-accent:#0E1116;
   --orb-rim:rgba(190,240,255,.35);--orb-wave:rgba(150,235,255,.55)}
 /* day mode */
-[data-theme=light]{--line:#CBD5E1;--text:#0F172A;--mute:#556070;--accent:#0F766E;--warn:#C2410C;
+[data-theme=light]{--up:#0F766E;--down:#BE123C;--line:#CBD5E1;--text:#0F172A;--mute:#556070;--accent:#0F766E;--warn:#C2410C;
   --page:linear-gradient(160deg,#E0F2FE 0%,#F1F5F9 55%,#EDE9FE 100%);--card:rgba(255,255,255,.82);--field:#FFFFFF;--chip:#E2E8F0;--on-accent:#FFFFFF;
   --orb-rim:rgba(15,118,110,.45);--orb-wave:rgba(15,118,110,.45)}
 [data-theme=light] .galaxy{display:none}

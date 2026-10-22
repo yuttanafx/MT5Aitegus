@@ -19,7 +19,7 @@ export async function setJSON(k: string, v: any) {
 }
 
 export const defaultSettings = (): Settings => ({
-  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, holdSec: 15, newsOn: true, newsBefore: 30, newsAfter: 15, newsImpact: 'High', newsUntil: 0, map: DEFAULT_MAP, gridProfiles: DEFAULT_PROFILES, gridMap: DEFAULT_GRID_MAP,
+  provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, regimeSource: 'ai', holdSec: 15, newsOn: true, newsBefore: 30, newsAfter: 15, newsImpact: 'High', newsUntil: 0, map: DEFAULT_MAP, gridProfiles: DEFAULT_PROFILES, gridMap: DEFAULT_GRID_MAP,
 });
 export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {})) });
 // Every trading account has its own queue, latest decision, throttle timers and voice flag.

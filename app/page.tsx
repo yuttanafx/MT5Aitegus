@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import NewsCard from '@/components/NewsCard';
+import ChartCard from '@/components/ChartCard';
 
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
 const STATUS: Record<string, string> = { pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' };
@@ -302,6 +303,7 @@ export default function Page() {
         </div>
       </section>
 
+      {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={d?.symbol ?? ''} tf={d?.tf ?? ''} regime={d?.regime} />}
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
       <div className="grid">
@@ -332,6 +334,17 @@ export default function Page() {
             </select>
             <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { holdSec: hold }))}>บันทึก</button>
             <span className="mute">ตอนนี้: {data?.settings?.holdSec ?? 15} วินาที (หน่วงเฉพาะตอนเปิดหน้านี้พร้อมเสียงแจ้งเตือนอยู่)</span>
+          </div>}
+          {isAdmin && <div className="row">
+            <label className="sub" htmlFor="rsrc">แหล่งสภาพตลาด</label>
+            <select id="rsrc" disabled={busy} value={data?.settings?.regimeSource ?? 'ai'} onChange={(e) => act(() => api('/api/settings', { regimeSource: e.target.value }))}>
+              <option value="ai">AI วิเคราะห์เอง</option>
+              <option value="tradingview">ดึงแนวโน้มจาก TradingView เอง (ไม่ต้องใช้ Pine / webhook)</option>
+              <option value="chart">กราฟจาก EA คำนวณเอง (ไม่เรียก AI ไม่ต้องใช้ TradingView)</option>
+              <option value="both">Webhook ก่อน ถ้าไม่มีใช้ AI</option>
+              <option value="webhook">Webhook อย่างเดียว (ไม่เรียก AI)</option>
+            </select>
+            <span className="mute">ใช้กับ EA กริด · "กราฟจาก EA" ใช้ ADX/EMA จากแท่งเทียนที่ EA ส่งมา (ต้องใช้ EA เวอร์ชันใหม่)</span>
           </div>}
           {!isAdmin && <div className="mute">AI วิเคราะห์ทุก {data?.settings?.intervalMin ?? 15} นาที</div>}
           {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>}
