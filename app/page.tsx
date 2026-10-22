@@ -126,8 +126,8 @@ export default function Page() {
   };
   const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'สลับเป็นโหมดกลางวัน' : 'สลับเป็นโหมดกลางคืน'}>{theme === 'dark' ? '☀️ กลางวัน' : '🌙 กลางคืน'}</button>;
 
-  const api = useCallback(async (path: string, body?: any) => {
-    const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key, ...(acct !== 'main' ? { 'x-acct': acct } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const api = useCallback(async (path: string, body?: any, method?: string) => {
+    const r = await fetch(path, { method: method ?? (body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json', 'x-admin-key': key, ...(acct !== 'main' ? { 'x-acct': acct } : {}) }, body: body ? JSON.stringify(body) : undefined });
     if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : (await r.json().catch(() => null))?.error ?? 'เกิดข้อผิดพลาด ' + r.status);
     return r.json();
   }, [key, acct]);
@@ -487,7 +487,10 @@ export default function Page() {
       </section>}
 
       <section className="card">
-        <h2>คิวคำสั่งส่งเข้า EA</h2>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h2>คิวคำสั่งส่งเข้า EA</h2>
+          <button className="btn" disabled={busy} onClick={() => { if (!window.confirm('ล้างประวัติคำสั่งที่เสร็จ/ล้มเหลว/ถูกบล็อกทั้งหมด? (คำสั่งที่ยังรอส่งหรือกำลังส่งจะไม่ถูกลบ)')) return; act(async () => { const r = await api('/api/orders', undefined, 'DELETE'); setMMsg(`ล้างประวัติแล้ว ${r.removed} รายการ`); }); }}>🗑 ล้างประวัติ</button>
+        </div>
         <div className="tblwrap"><table>
           <thead><tr><th>เวลา</th><th>Symbol</th><th>ทิศทาง</th><th>ล็อต</th><th>ที่มา</th><th>สถานะ</th></tr></thead>
           <tbody>
