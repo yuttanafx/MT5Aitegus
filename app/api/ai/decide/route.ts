@@ -4,6 +4,7 @@ import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
 import { addCmd, ak, getJSON, getSettings, setJSON } from '@/lib/store';
 import { regimeFor } from '@/lib/regime';
+import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import type { Mkt } from '@/lib/types';
 import { newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
@@ -45,7 +46,17 @@ export async function POST(req: Request) {
 
   await noteSymbol(ind.symbol);
   const nw = await newsFor(ind.symbol, settings);   // strong news near this symbol -> no AI call, regime = news (no strategies mapped = no trade)
-  const d = nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : fromEA ? await regimeFor(ind, settings.intervalMin) : await decide(ind);
+  // regime source "tradingview": the server reads ADX/EMA from TradingView (no AI call, no Pine). If TradingView is unreachable it falls back to the AI.
+  let tv: { regime: any; confidence: number; reason: string; provider: null; model: string } | null = null;
+  if (fromEA && !nw.active && settings.regimeSource === 'tradingview') {
+    const t = await fetchTech(ind.symbol, ind.tf);
+    if (t) {
+      const prev = await getJSON<any>(ak('decision', acct), null);
+      const regime = regimeFromTech(t, prev?.symbol === ind.symbol ? prev.regime : undefined);
+      tv = { regime, confidence: 0.9, provider: null, model: 'tradingview', reason: `จาก TradingView (${t.ticker}, ${ind.tf}): ADX ${t.adx.toFixed(1)}, EMA20 ${t.ema20 >= t.ema50 ? 'สูงกว่า' : 'ต่ำกว่า'} EMA50` };
+    }
+  }
+  const d = tv ? tv : nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : fromEA ? await regimeFor(ind, settings.intervalMin) : await decide(ind);
 
   // Strategies for this regime (an empty list = do not trade in this regime).
   const ids = settings.map?.[d.regime] ?? DEFAULT_MAP[d.regime] ?? [];

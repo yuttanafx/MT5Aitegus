@@ -12,6 +12,9 @@ const EXCHANGES = () => (process.env.TV_EXCHANGES ?? 'OANDA,FX_IDC,FOREXCOM,CAPI
 // Optional per-symbol override, e.g. TV_SYMBOL_MAP={"XAUUSD":"OANDA:XAUUSD","BTCUSD":"BITSTAMP:BTCUSD"}
 const override = (k: string): string | null => { try { return JSON.parse(process.env.TV_SYMBOL_MAP ?? '{}')[k] ?? null; } catch { return null; } };
 
+// Common broker names that TradingView does not know
+const ALIAS: Record<string, string> = { GOLD: 'XAUUSD', SILVER: 'XAGUSD', XAUUSD: 'XAUUSD', USOIL: 'USOIL', UKOIL: 'UKOIL' };
+
 export type TvTech = { ticker: string; adx: number; diPlus: number; diMinus: number; ema20: number; ema50: number; price: number };
 const TREND_ADX = 25, RANGE_ADX = 20;
 
@@ -24,7 +27,7 @@ export function regimeFromTech(t: Pick<TvTech, 'adx' | 'ema20' | 'ema50'>, prev?
 }
 
 export async function fetchTech(symbol: string, tf: string): Promise<TvTech | null> {
-  const k = symKey(symbol), sfx = SUFFIX[tf.toUpperCase()];
+  const k0 = symKey(symbol), k = ALIAS[k0] ?? k0, sfx = SUFFIX[tf.toUpperCase()];
   if (sfx === undefined) return null;
   const cacheKey = `tvtech:${k}:${tf.toUpperCase()}`;
   const c = await getJSON<{ ts: number; t: TvTech } | null>(cacheKey, null);
@@ -33,7 +36,7 @@ export async function fetchTech(symbol: string, tf: string): Promise<TvTech | nu
   const cols = ['ADX', 'ADX+DI', 'ADX-DI', 'EMA20', 'EMA50', 'close'].map((x) => (x === 'close' ? x : x + sfx));
   for (const m of MARKETS) {
     try {
-      const r = await fetch(`https://scanner.tradingview.com/${m}/scan`, {
+      const r = await fetch(`${process.env.TV_SCAN_URL ?? "https://scanner.tradingview.com"}/${m}/scan`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': 'Mozilla/5.0' },
         body: JSON.stringify({ symbols: { tickers }, columns: cols }), signal: AbortSignal.timeout(6_000), cache: 'no-store',
       });
