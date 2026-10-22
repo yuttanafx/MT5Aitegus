@@ -1,12 +1,13 @@
-import { isEA } from '@/lib/auth';
+import { eaAuth } from '@/lib/auth';
 import { getCmds, getSettings, saveCmds } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
 // The EA calls this every few seconds. Plain text, one command per line: id|symbol|side|lot|sl|tp
 export async function GET(req: Request) {
-  if (!isEA(req)) return new Response('unauthorized', { status: 401 });
+  const a = await eaAuth(req);
+  if (!a.ok) return new Response(a.msg, { status: a.status });
   if ((await getSettings()).paused) return new Response('', { headers: { 'content-type': 'text/plain' } });
-  const cmds = await getCmds();
+  const cmds = await getCmds(a.acct);
   const now = Date.now();
   const out: string[] = [];
   let changed = false;
@@ -18,6 +19,6 @@ export async function GET(req: Request) {
     c.status = 'sent';
     out.push([c.id, c.symbol, c.side, c.lot, c.sl ?? 0, c.tp ?? 0].join('|'));
   }
-  if (changed) await saveCmds(cmds);
+  if (changed) await saveCmds(cmds, a.acct);
   return new Response(out.join('\n'), { headers: { 'content-type': 'text/plain' } });
 }

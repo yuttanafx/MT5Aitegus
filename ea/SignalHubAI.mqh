@@ -5,7 +5,7 @@
 //| Include it AFTER the dashboard globals (ebLotB, AutoB, ...).     |
 //+------------------------------------------------------------------+
 input string          AI_Url          = "https://your-app.vercel.app"; // Signal Hub URL (add it in Tools > Options > Expert Advisors > Allow WebRequest)
-input string          AI_EAKey        = "";                             // EA_API_KEY from Vercel
+input string          AI_EAKey        = "";                             // your EA key (the admin gives it to you; it only works on your MT5 account number)
 input ENUM_TIMEFRAMES AI_TF           = PERIOD_M15;                     // timeframe whose indicators are sent to the AI
 input int             AI_PushSeconds  = 60;                             // how often to ask the server (server throttles by its own interval)
 input double          AI_CapStartLot  = 0.10;                           // safety caps: the EA never applies more than these, whatever the server says
@@ -93,7 +93,7 @@ bool AI_Request(const string body, string &resp)
    int len = StringToCharArray(body, post, 0, WHOLE_ARRAY, CP_UTF8) - 1;
    if(len < 0) len = 0;
    ArrayResize(post, len);
-   string headers = "Content-Type: application/json\r\nx-api-key: " + AI_EAKey + "\r\n";
+   string headers = "Content-Type: application/json\r\nx-api-key: " + AI_EAKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    ResetLastError();
    int code = WebRequest("POST", AI_Url + "/api/ea/grid", headers, 8000, post, res, rh);
    if(code != 200)

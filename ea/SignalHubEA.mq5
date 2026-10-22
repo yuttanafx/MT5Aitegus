@@ -40,7 +40,7 @@ string Http(string method, string path, string body, int &code)
 {
    char data[], result[];
    string rh;
-   string headers = "Content-Type: application/json\r\nx-api-key: " + ApiKey + "\r\n";
+   string headers = "Content-Type: application/json\r\nx-api-key: " + ApiKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    if(StringLen(body) > 0) StringToCharArray(body, data, 0, StringLen(body), CP_UTF8);
    ResetLastError();
    code = WebRequest(method, ServerUrl + path, headers, 8000, data, result, rh);

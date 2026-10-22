@@ -1,7 +1,7 @@
-import { who } from '@/lib/auth';
+import { pickAcct, who } from '@/lib/auth';
 import { analyze, chat, macro, MACRO_RE, MARKET_RE, NEWS_RE } from '@/lib/ai';
 import { clock, newsView } from '@/lib/news';
-import { getCmds, getJSON, getSettings } from '@/lib/store';
+import { ak, getCmds, getJSON, getSettings } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -12,7 +12,8 @@ export async function POST(req: Request) {
   const detail = (e: any) => (me.role === 'admin' ? `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]` : '');
   const { message } = await req.json().catch(() => ({ message: '' }));
   if (!message || typeof message !== 'string') return Response.json({ error: 'bad body' }, { status: 400 });
-  const [cmds, decision, settings] = await Promise.all([getCmds(), getJSON<any>('decision', null), getSettings()]);
+  const acct = await pickAcct(req, me);
+  const [cmds, decision, settings] = await Promise.all([getCmds(acct), getJSON<any>(ak('decision', acct), null), getSettings()]);
   let newsCtx = '';
   try { // upcoming events + guard status, so every answer (market, macro, news) can take the news into account
     const syms = await getJSON<string[]>('symbols', []);

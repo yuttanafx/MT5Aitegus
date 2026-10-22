@@ -6,4 +6,4 @@ export type Cmd = {
   holdUntil?: number; mkt?: Mkt; // holdUntil: EA does not receive the order before this time (lets the dashboard read out a market summary first)
 };
 export type Settings = { holdSec: number; newsOn: boolean; newsBefore: number; newsAfter: number; newsImpact: 'High' | 'Medium'; newsUntil: number; provider: 'anthropic' | 'openai' | 'google'; model: string; paused: boolean; intervalMin: number; map: Record<string, string[]>; gridProfiles: Record<string, import('./profiles').Profile>; gridMap: Record<string, string> };
-export type User = { id: string; name: string; hash: string; createdAt: number; lastSeen?: number };
+export type User = { id: string; name: string; hash: string; createdAt: number; lastSeen?: number; login?: string; keyHash?: string }; // login = the one MT5 account number this user's EA may use, keyHash = hash of that account's EA key

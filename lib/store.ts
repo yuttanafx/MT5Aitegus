@@ -22,12 +22,15 @@ export const defaultSettings = (): Settings => ({
   provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, holdSec: 15, newsOn: true, newsBefore: 30, newsAfter: 15, newsImpact: 'High', newsUntil: 0, map: DEFAULT_MAP, gridProfiles: DEFAULT_PROFILES, gridMap: DEFAULT_GRID_MAP,
 });
 export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {})) });
-export const getCmds = () => getJSON<Cmd[]>('cmds', []);
-export const saveCmds = (c: Cmd[]) => setJSON('cmds', c.slice(0, 200));
+// Every trading account has its own queue, latest decision, throttle timers and voice flag.
+// 'main' = the admin's own account (EA_API_KEY) and keeps the original key names, so existing data keeps working.
+export const ak = (base: string, acct = 'main') => (acct === 'main' ? base : `${base}:${acct}`);
+export const getCmds = (acct = 'main') => getJSON<Cmd[]>(ak('cmds', acct), []);
+export const saveCmds = (c: Cmd[], acct = 'main') => setJSON(ak('cmds', acct), c.slice(0, 200));
 
 // Adds a command to the queue after risk checks. Blocked commands are kept for the log.
-export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & { mkt?: Mkt }): Promise<Cmd> {
-  const cmds = await getCmds();
+export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & { mkt?: Mkt }, acct = 'main'): Promise<Cmd> {
+  const cmds = await getCmds(acct);
   const settings = await getSettings();
   let reason: string | null = settings.paused ? 'ระบบถูกหยุดชั่วคราว' : null;
   if (!reason) { // news guard: no NEW orders around high-impact news (fail-open: a calendar problem never blocks order intake)
@@ -42,10 +45,10 @@ export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp
   // Hold the order briefly ONLY while a dashboard with voice alerts is open (it pings /api/state?voice=1),
   // so the spoken market summary comes before the EA receives the order. Nobody listening = no delay.
   if (!reason && settings.holdSec > 0) {
-    const voiceAt = await getJSON<number>('voiceAt', 0);
+    const voiceAt = await getJSON<number>(ak('voiceAt', acct), 0);
     if (Date.now() - voiceAt < 20_000) cmd.holdUntil = Date.now() + settings.holdSec * 1000;
   }
-  await saveCmds([cmd, ...cmds]);
+  await saveCmds([cmd, ...cmds], acct);
   return cmd;
 }
 

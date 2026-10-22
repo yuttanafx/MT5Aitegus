@@ -32,7 +32,9 @@ export default function Page() {
   const [loginErr, setLoginErr] = useState('');
   const [users, setUsers] = useState<any[]>([]);
   const [newName, setNewName] = useState('');
-  const [issued, setIssued] = useState<{ name: string; password: string } | null>(null);
+  const [issued, setIssued] = useState<{ name: string; password?: string; eaKey?: string; login?: string } | null>(null);
+  const [newLogin, setNewLogin] = useState('');
+  const [acct, setAcct] = useState('main'); // admin only: which trading account's data is shown
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
   const [hold, setHold] = useState(15);
@@ -119,10 +121,10 @@ export default function Page() {
   const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'สลับเป็นโหมดกลางวัน' : 'สลับเป็นโหมดกลางคืน'}>{theme === 'dark' ? '☀️ กลางวัน' : '🌙 กลางคืน'}</button>;
 
   const api = useCallback(async (path: string, body?: any) => {
-    const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key }, body: body ? JSON.stringify(body) : undefined });
+    const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key, ...(acct !== 'main' ? { 'x-acct': acct } : {}) }, body: body ? JSON.stringify(body) : undefined });
     if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : 'เกิดข้อผิดพลาด ' + r.status);
     return r.json();
-  }, [key]);
+  }, [key, acct]);
 
   const load = useCallback(() => api('/api/state' + (autoVoice ? '?voice=1' : '')).then((d) => {
     setData(d); setErr('');
@@ -235,12 +237,12 @@ export default function Page() {
   const userAct = (body: any) => act(async () => {
     const r = await api('/api/users', body);
     setUsers(r.users);
-    if (r.password) { setIssued({ name: r.name, password: r.password }); setCopied(false); }
-    if (body.action === 'create') setNewName('');
+    if (r.password || r.eaKey) { setIssued({ name: r.name, password: r.password, eaKey: r.eaKey, login: r.login }); setCopied(false); }
+    if (body.action === 'create') { setNewName(''); setNewLogin(''); }
   });
   const copyIssued = async () => {
     if (!issued) return;
-    try { await navigator.clipboard.writeText(`MT5 Signal Hub\nลิงก์: ${location.origin}\nรหัสผ่าน: ${issued.password}`); setCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); }
+    try { await navigator.clipboard.writeText(['MT5 Signal Hub', `ลิงก์เว็บ: ${location.origin}`, issued.password && `รหัสผ่านเข้าเว็บ: ${issued.password}`, issued.eaKey && '--- ตั้งค่าใน EA ---', issued.eaKey && `AI_Url: ${location.origin}`, issued.eaKey && `AI_EAKey: ${issued.eaKey}`, issued.login && `ใช้ได้กับบัญชี MT5 เลข ${issued.login} เท่านั้น`].filter(Boolean).join('\n')); setCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); }
   };
   const paused = !!data?.settings?.paused;
 
@@ -263,7 +265,12 @@ export default function Page() {
       <div className="top">
         <div><h1>MT5 Signal Hub</h1><div className="sub">AI เลือกกลยุทธ์ · เซิร์ฟเวอร์ตรวจเงื่อนไข · EA ส่งคำสั่ง</div></div>
         <div className="row">
-          <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}</span>
+          <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}{!isAdmin && data?.account?.login ? ` · MT5 ${data.account.login}` : ''}</span>
+          {isAdmin && data?.accounts?.length > 1 && (
+            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setAcct(e.target.value); }}>
+              {data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.login ? ` (${a.login})` : ''}</option>)}
+            </select>
+          )}
           <span className={'chip ' + (paused ? 'no' : 'ok')}>{paused ? 'ระบบหยุดอยู่' : 'ระบบทำงาน'}</span>
           {isAdmin && <button className={'btn ' + (paused ? 'main' : 'warn')} disabled={busy} onClick={() => act(() => api('/api/settings', { paused: !paused }))}>
             {paused ? 'เปิดระบบ' : 'หยุดส่งคำสั่งทั้งหมด'}
@@ -427,32 +434,38 @@ export default function Page() {
 
       {isAdmin && <section className="card">
         <h2>ผู้ใช้งาน</h2>
-        <div className="mute">สร้างรหัสผ่านแล้วส่งให้ผู้ใช้ ผู้ใช้ดูข้อมูลและคุยกับ AI ได้ แต่ตั้งค่า หยุดระบบ หรือจัดการ key ไม่ได้ รหัสจะแสดงครั้งเดียว (ถ้าหายให้กด "รีเซ็ตรหัส")</div>
+        <div className="mute">ผู้ใช้ 1 คน = บัญชีเทรด MT5 1 บัญชี = EA 1 ตัว ระบบสร้างให้ 2 อย่าง คือ รหัสผ่านเข้าเว็บ และ EA key (ใส่ที่ช่อง AI_EAKey ใน EA) EA key ใช้ได้กับเลขบัญชีที่ผูกไว้เท่านั้น ออเดอร์ ประวัติ และการวิเคราะห์ของแต่ละคนแยกกัน ผู้ใช้เห็นเฉพาะบัญชีของตัวเอง ทั้งสองรหัสแสดงครั้งเดียว (ถ้าหายให้กดรีเซ็ต)</div>
         <div className="row">
           <label className="sub" htmlFor="nu">ชื่อผู้ใช้</label>
           <input id="nu" value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} placeholder="เช่น สมชาย" />
-          <button className="btn main" disabled={busy || !newName.trim()} onClick={() => userAct({ action: 'create', name: newName })}>สร้างรหัสผ่าน</button>
+          <label className="sub" htmlFor="nl">เลขบัญชี MT5</label>
+          <input id="nl" inputMode="numeric" value={newLogin} maxLength={12} onChange={(e) => setNewLogin(e.target.value.replace(/\D/g, ''))} placeholder="เช่น 3030514" />
+          <button className="btn main" disabled={busy || !newName.trim() || newLogin.length < 4} onClick={() => userAct({ action: 'create', name: newName, login: newLogin })}>สร้างบัญชีผู้ใช้</button>
         </div>
         {issued && <div className="bubble ai" role="status">
-          <div className="mute">รหัสผ่านของ {issued.name} (แสดงครั้งเดียว)</div>
-          <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{issued.password}</div>
-          <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์ + รหัส'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
+          <div className="mute">ข้อมูลของ {issued.name}{issued.login ? ` (MT5 ${issued.login})` : ''} แสดงครั้งเดียว</div>
+          {issued.password && <><div className="mute">รหัสผ่านเข้าเว็บ</div><div style={{ fontFamily: 'monospace', fontSize: 18, margin: '4px 0 8px', wordBreak: 'break-all', userSelect: 'all' }}>{issued.password}</div></>}
+          {issued.eaKey && <><div className="mute">EA key (ใส่ที่ AI_EAKey ใน EA)</div><div style={{ fontFamily: 'monospace', fontSize: 16, margin: '4px 0 8px', wordBreak: 'break-all', userSelect: 'all' }}>{issued.eaKey}</div></>}
+          <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความส่งให้ผู้ใช้'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
         </div>}
         <div className="tblwrap"><table>
-          <thead><tr><th>ชื่อ</th><th>สร้างเมื่อ</th><th>เข้าใช้ล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>EA ส่งข้อมูลล่าสุด</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
-                <td>{new Date(u.createdAt).toLocaleDateString('th-TH')}</td>
+                <td>{u.login || <span className="mute">ยังไม่ผูก</span>}</td>
+                <td>{u.eaSeen ? new Date(u.eaSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
                 <td>{u.lastSeen ? new Date(u.lastSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
                 <td><div className="row">
-                  <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>รีเซ็ตรหัส</button>
+                  <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>รีเซ็ตรหัสเว็บ</button>
+                  {u.login && <button className="btn" disabled={busy} onClick={() => { if (confirm(`สร้าง EA key ใหม่ให้ ${u.name}? key เดิมจะใช้ไม่ได้ทันที`)) userAct({ action: 'resetKey', id: u.id }); }}>รีเซ็ต EA key</button>}
+                  <button className="btn" disabled={busy} onClick={() => { const l = (prompt(`เลขบัญชี MT5 ของ ${u.name}`, u.login || '') || '').replace(/\D/g, ''); if (l.length >= 4) userAct({ action: 'bind', id: u.id, login: l }); }}>{u.login ? 'เปลี่ยนเลขบัญชี' : 'ผูกบัญชี'}</button>
                   <button className="btn warn" disabled={busy} onClick={() => { if (confirm(`ลบผู้ใช้ ${u.name}?`)) userAct({ action: 'delete', id: u.id }); }}>ลบ</button>
                 </div></td>
               </tr>
             ))}
-            {!users.length && <tr><td colSpan={4} className="mute">ยังไม่มีผู้ใช้</td></tr>}
+            {!users.length && <tr><td colSpan={5} className="mute">ยังไม่มีผู้ใช้</td></tr>}
           </tbody>
         </table></div>
       </section>}

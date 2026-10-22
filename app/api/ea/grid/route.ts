@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { isEA } from '@/lib/auth';
-import { decide } from '@/lib/ai';
+import { eaAuth } from '@/lib/auth';
 import { DEFAULT_GRID_MAP, DEFAULT_PROFILES } from '@/lib/profiles';
-import { getJSON, getSettings, setJSON } from '@/lib/store';
+import { ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { regimeFor } from '@/lib/regime';
 import { evKey, newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -15,12 +15,15 @@ const Body = z.object({
 // The grid EA calls this. The AI only names the market regime; the grid profile for that regime
 // (set in the dashboard) is sent back as plain key=value lines. Throttled by the dashboard interval.
 export async function POST(req: Request) {
-  if (!isEA(req)) return new Response('unauthorized', { status: 401 });
+  const a = await eaAuth(req);
+  if (!a.ok) return new Response(a.msg, { status: a.status });
+  const acct = a.acct;
+  await setJSON(ak('seen', acct), { ts: Date.now() });
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return new Response('bad body', { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
   const settings = await getSettings();
-  const key = 'gridstate:' + ind.symbol;
+  const key = ak('gridstate:' + ind.symbol, acct);
 
   let st = await getJSON<any>(key, null);
   await noteSymbol(ind.symbol);
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
   const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
     const pid0 = settings.gridMap[r.regime] ?? DEFAULT_GRID_MAP[r.regime] ?? 'defensive';
     const prof = settings.gridProfiles[pid0] ?? DEFAULT_PROFILES.defensive;
-    await setJSON('decision', {
+    await setJSON(ak('decision', acct), {
       regime: r.regime, confidence: r.confidence, reason: r.reason, provider: r.provider ?? null, model: r.model ?? '',
       symbol: ind.symbol, tf: ind.tf, ts: r.ts, kind: 'grid', strategy_id: prof.id, strategy: prof.name,
       candidates: [prof.name], eval: null, pass: false, src: 'ea', newsGuard: r.regime === 'news' && !!nw.active,
@@ -43,7 +46,7 @@ export async function POST(req: Request) {
       await writeDecision({ ...st, model: 'news-guard' });
     }
   } else if (!st || st.newsId || st.ts + settings.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
-    const d = await decide(ind);
+    const d = await regimeFor(ind, settings.intervalMin);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);
     st = { regime: d.regime, confidence: d.confidence, reason: d.reason, hold: d.confidence < minConf, ts: Date.now() };
     await setJSON(key, st);

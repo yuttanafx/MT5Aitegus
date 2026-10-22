@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import { isAdmin, isEA } from '@/lib/auth';
+import { eaAuth, pickAcct, who } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
-import { addCmd, getJSON, getSettings, setJSON } from '@/lib/store';
+import { addCmd, ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { regimeFor } from '@/lib/regime';
 import type { Mkt } from '@/lib/types';
 import { newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
@@ -19,24 +20,32 @@ const r5 = (n: number) => Math.round(n * 1e5) / 1e5;
 // Flow: AI names the market regime -> strategies mapped to that regime are pulled in -> server rules check entry
 //       -> risk manager -> queue for the EA.
 export async function POST(req: Request) {
-  if (!isAdmin(req) && !isEA(req)) return Response.json({ error: 'unauthorized' }, { status: 401 });
+  // EA: its own account (per-account EA key). Admin test run: the account selected in the dashboard.
+  const me = await who(req);
+  const fromEA = me?.role !== 'admin';
+  let acct = 'main';
+  if (fromEA) {
+    const a = await eaAuth(req);
+    if (!a.ok) return Response.json({ error: a.msg }, { status: a.status });
+    acct = a.acct;
+    await setJSON(ak('seen', acct), { ts: Date.now() });
+  } else acct = await pickAcct(req, me!);
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: 'bad body' }, { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
   const settings = await getSettings();
 
   // EA calls are throttled by the interval set in the dashboard (admin test runs are never throttled).
-  const fromEA = !isAdmin(req);
   if (fromEA) {
-    const last = await getJSON<number>('lastrun:' + ind.symbol, 0);
+    const last = await getJSON<number>(ak('lastrun:' + ind.symbol, acct), 0);
     const wait = last + settings.intervalMin * 60_000 - Date.now();
     if (wait > 5_000) return Response.json({ skipped: true, nextInSec: Math.ceil(wait / 1000) });
-    await setJSON('lastrun:' + ind.symbol, Date.now());
+    await setJSON(ak('lastrun:' + ind.symbol, acct), Date.now());
   }
 
   await noteSymbol(ind.symbol);
   const nw = await newsFor(ind.symbol, settings);   // strong news near this symbol -> no AI call, regime = news (no strategies mapped = no trade)
-  const d = nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : await decide(ind);
+  const d = nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : fromEA ? await regimeFor(ind, settings.intervalMin) : await decide(ind);
 
   // Strategies for this regime (an empty list = do not trade in this regime).
   const ids = settings.map?.[d.regime] ?? DEFAULT_MAP[d.regime] ?? [];
@@ -56,13 +65,13 @@ export async function POST(req: Request) {
       symbol: ind.symbol, side: s.side, lot: p.data.lot ?? 0.01, source: 'ai',
       mkt: { regime: d.regime, confidence: d.confidence, strategy: s.name, reason: d.reason, tf: ind.tf, ts: Date.now(), ind: snap } as Mkt,
       sl: r5(ind.price + (buy ? -1.5 : 1.5) * ind.atr), tp: r5(ind.price + (buy ? 2.5 : -2.5) * ind.atr),
-    });
+    }, acct);
     cmdId = cmd.id;
   }
   const out = {
     ...d, symbol: ind.symbol, tf: ind.tf, ts: Date.now(), strategy_id: s?.id ?? 'no_trade', strategy: s?.name ?? 'ไม่เทรด',
     candidates: cands.map((c) => c.name), eval: ev, pass, cmdId, src: fromEA ? 'ea' : 'test', ind: snap, newsGuard: !!nw.active,
   };
-  await setJSON('decision', out);
+  await setJSON(ak('decision', acct), out);
   return Response.json(out);
 }
