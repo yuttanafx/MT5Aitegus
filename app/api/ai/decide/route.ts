@@ -3,7 +3,7 @@ import { eaAuth, pickAcct, who } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
 import { addCmd, ak, getJSON, getSettings, setJSON } from '@/lib/store';
-import { regimeFor } from '@/lib/regime';
+import { regimeFor, saveSymRow } from '@/lib/regime';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import type { Mkt } from '@/lib/types';
 import { newsFor, newsText, noteSymbol } from '@/lib/news';
@@ -84,5 +84,6 @@ export async function POST(req: Request) {
     candidates: cands.map((c) => c.name), eval: ev, pass, cmdId, src: fromEA ? 'ea' : 'test', ind: snap, newsGuard: !!nw.active,
   };
   await setJSON(ak('decision', acct), out);
+  if (fromEA) await saveSymRow(acct, { symbol: ind.symbol, tf: ind.tf, ts: Date.now(), regime: d.regime, confidence: d.confidence, reason: d.reason, profile: out.strategy, price: ind.price });
   return Response.json(out);
 }

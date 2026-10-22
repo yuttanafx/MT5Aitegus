@@ -15,6 +15,20 @@ export async function regimeFor(ind: Ind & { symbol: string; tf: string }, inter
   return d;
 }
 
+// ---- One row per symbol an account's EA(s) report: the dashboard lists them so you can see every pair's trend and pick one ----
+export type SymRow = { symbol: string; key: string; tf: string; ts: number; regime: string; confidence: number; reason: string; profile?: string; hold?: boolean; price?: number };
+export async function saveSymRow(acct: string, r: Omit<SymRow, 'key'>) {
+  const key = r.symbol.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  await setJSON(ak('symrow:' + key, acct), { ...r, key });
+  const idx = await getJSON<string[]>(ak('symidx', acct), []);
+  if (!idx.includes(key)) await setJSON(ak('symidx', acct), [...idx, key].slice(-30));
+}
+export async function listSymRows(acct: string): Promise<SymRow[]> {
+  const idx = await getJSON<string[]>(ak('symidx', acct), []);
+  const rows = await Promise.all(idx.map((k) => getJSON<SymRow | null>(ak('symrow:' + k, acct), null)));
+  return rows.filter((x): x is SymRow => !!x).sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
 // ---- Market regime reported from outside (TradingView alert -> /api/webhook) ----
 // Broker symbols differ (XAUUSD, XAUUSDm, XAUUSD.a ...), so both sides are reduced to the first 6 letters/digits.
 export const symKey = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);

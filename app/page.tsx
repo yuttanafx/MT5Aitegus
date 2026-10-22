@@ -39,6 +39,8 @@ export default function Page() {
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
   const [mSym, setMSym] = useState('');
+  const [sel, setSel] = useState('');
+  const [gscope, setGscope] = useState('');   // '' = shared grid profiles, otherwise one pair's own set   // pair chosen in the pair list (drives the chart and the order box)
   const [mLot, setMLot] = useState('0.01');
   const [mMsg, setMMsg] = useState('');
   const [hold, setHold] = useState(15);
@@ -130,10 +132,10 @@ export default function Page() {
     return r.json();
   }, [key, acct]);
 
-  const load = useCallback(() => api('/api/state' + (autoVoice ? '?voice=1' : '')).then((d) => {
+  const load = useCallback(() => api('/api/state' + [autoVoice ? 'voice=1' : '', sel ? 'sym=' + encodeURIComponent(sel) : ''].filter(Boolean).map((x, i) => (i ? '&' : '?') + x).join('')).then((d) => {
     setData(d); setErr('');
     setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setHold((v) => (data ? v : d.settings.holdSec ?? 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
-  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data, autoVoice]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data, autoVoice, sel]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   loadRef.current = load;
   useEffect(() => { if (!key) return; load(); const t = setInterval(() => { if (!pipRef.current) load(); }, 5000); return () => clearInterval(t); }, [key, load]);
@@ -236,6 +238,14 @@ export default function Page() {
 
   const act = async (fn: () => Promise<any>) => { setBusy(true); try { await fn(); await load(); } catch (e: any) { setErr(e.message); } setBusy(false); };
   const d = data?.decision;
+  const symRows: any[] = data?.symbols ?? [];
+  const selRow = symRows.find((r) => r.key === (sel || data?.selSym)) ?? null;
+  const ordSym = (mSym.trim() || selRow?.symbol || d?.symbol || '').toUpperCase();
+  const symGrid: Record<string, any> = data?.settings?.symGrid ?? {};
+  const gScopes = Array.from(new Set([...symRows.map((r) => r.key), ...Object.keys(symGrid)]));
+  const gName = (k: string) => symRows.find((r) => r.key === k)?.symbol ?? k;
+  const pickScope = (sc: string) => { const s = data?.settings; const o = sc ? symGrid[sc] : null; setGrid({ profiles: JSON.parse(JSON.stringify(o?.profiles ?? s.gridProfiles)), map: { ...(o?.map ?? s.gridMap) } }); setGscope(sc); };
+  const ago = (ts: number) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 90 ? s + ' วิ' : s < 5400 ? Math.round(s / 60) + ' นาที' : Math.round(s / 3600) + ' ชม.'; };
   const isAdmin = data?.me?.role === 'admin';
   useEffect(() => { if (isAdmin) api('/api/users').then((r) => setUsers(r.users)).catch(() => {}); }, [isAdmin, api]);
   const userAct = (body: any) => act(async () => {
@@ -306,21 +316,39 @@ export default function Page() {
         </div>
       </section>
 
-      {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={d?.symbol ?? ''} tf={d?.tf ?? ''} regime={d?.regime} />}
+      {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={selRow?.symbol ?? d?.symbol ?? ''} tf={selRow?.tf ?? d?.tf ?? ''} regime={selRow?.regime ?? d?.regime} />}
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
+
+      {symRows.length > 0 && <section className="card">
+        <div className="row" style={{ justifyContent: 'space-between' }}><h2>คู่เงินที่ EA ส่งมา ({symRows.length})</h2><span className="mute">กดแถวเพื่อดูกราฟและเลือกคู่สำหรับสั่งออเดอร์</span></div>
+        <div style={{ overflowX: 'auto' }}><table><thead><tr><th>คู่เงิน</th><th>TF</th><th>แนวโน้ม</th><th>โปรไฟล์ / กลยุทธ์</th><th>มั่นใจ</th><th>อัปเดต</th></tr></thead><tbody>
+          {symRows.map((r) => {
+            const stale = Date.now() - r.ts > 5 * 60_000, on = r.key === (sel || data?.selSym);
+            return (<tr key={r.key} tabIndex={0} role="button" aria-pressed={on} style={{ cursor: 'pointer', background: on ? 'var(--line)' : undefined, opacity: stale ? 0.55 : 1 }}
+              onClick={() => { setSel(r.key); setMSym(r.symbol); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(r.key); setMSym(r.symbol); } }}>
+              <td><b>{r.symbol}</b></td><td>{r.tf}</td>
+              <td><span className={'chip ' + (r.regime === 'trend_up' ? 'ok' : r.regime === 'trend_down' ? 'no' : '')}>{r.regime === 'trend_up' ? '▲ ' : r.regime === 'trend_down' ? '▼ ' : ''}{REGIME[r.regime] ?? r.regime}</span></td>
+              <td>{r.profile ?? '-'}{r.hold ? ' (ค้างค่าเดิม)' : ''}</td><td>{Math.round((r.confidence ?? 0) * 100)}%</td>
+              <td>{ago(r.ts)}{stale ? ' · EA เงียบ' : ''}</td></tr>);
+          })}
+        </tbody></table></div>
+        {selRow && <div style={{ fontSize: 14, lineHeight: 1.6 }}><b>{selRow.symbol}</b>: {selRow.reason}</div>}
+      </section>}
 
       <section className="card">
         <h2>เปิดออเดอร์แรกเอง</h2>
         <div className="row">
           <label className="sub" htmlFor="msym">Symbol</label>
-          <input id="msym" style={{ width: 120 }} value={mSym} placeholder={d?.symbol ?? 'เช่น XAUUSD'} onChange={(e) => setMSym(e.target.value)} />
+          <input id="msym" list="symlist" style={{ width: 130 }} value={mSym} placeholder={selRow?.symbol ?? d?.symbol ?? 'เช่น XAUUSD'} onChange={(e) => { setMSym(e.target.value); const k = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); if (symRows.some((r) => r.key === k)) setSel(k); }} />
+          <datalist id="symlist">{symRows.map((r) => <option key={r.key} value={r.symbol} />)}</datalist>
+          {symRows.find((r) => r.key === ordSym.replace(/[^A-Z0-9]/g, '').slice(0, 6)) && (() => { const r = symRows.find((x) => x.key === ordSym.replace(/[^A-Z0-9]/g, '').slice(0, 6)); return <span className={'chip ' + (r.regime === 'trend_up' ? 'ok' : r.regime === 'trend_down' ? 'no' : '')}>{r.regime === 'trend_up' ? '▲ ' : r.regime === 'trend_down' ? '▼ ' : ''}{REGIME[r.regime] ?? r.regime}</span>; })()}
           <label className="sub" htmlFor="mlot">Lot</label>
           <input id="mlot" style={{ width: 80 }} inputMode="decimal" value={mLot} onChange={(e) => setMLot(e.target.value)} />
           {(['BUY', 'SELL'] as const).map((sd) => (
             <button key={sd} className={'btn ' + (sd === 'BUY' ? 'main' : '')} disabled={busy} onClick={() => {
-              const sym = (mSym.trim() || d?.symbol || '').toUpperCase();
+              const sym = ordSym;
               if (!window.confirm(`ยืนยัน ${sd} ${sym || '(คู่ล่าสุดของ EA)'} ${mLot} ล็อต ส่งเข้า MT5 ทันที?`)) return;
-              act(async () => { const r = await api('/api/orders', { side: sd, lot: Number(mLot), symbol: mSym.trim() || undefined }); setMMsg(r.status === 'blocked' ? 'ถูกบล็อก: ' + (r.note ?? '') : `ส่งคำสั่ง ${sd} ${r.symbol} แล้ว รอ EA รับ (ไม่เกิน ~5 วินาที) ดูผลในตารางคำสั่ง`); });
+              act(async () => { const r = await api('/api/orders', { side: sd, lot: Number(mLot), symbol: ordSym || undefined }); setMMsg(r.status === 'blocked' ? 'ถูกบล็อก: ' + (r.note ?? '') : `ส่งคำสั่ง ${sd} ${r.symbol} แล้ว รอ EA รับ (ไม่เกิน ~5 วินาที) ดูผลในตารางคำสั่ง`); });
             }}>{sd === 'BUY' ? 'BUY ซื้อ' : 'SELL ขาย'}</button>
           ))}
         </div>
@@ -420,6 +448,14 @@ export default function Page() {
       {grid && <section className="card">
         <h2>โปรไฟล์กริดสำหรับ EA กริด</h2>
         <div className="mute">AI ระบุสภาพตลาด แล้ว EA กริด (Terravolteco SmartGold) จะดึงโปรไฟล์ของสภาพนั้นไปตั้งค่าตัวเองอัตโนมัติ ค่าถูกจำกัดเพดานทั้งฝั่งเซิร์ฟเวอร์และใน EA โปรไฟล์ที่ปิดทั้ง Buy/Sell = หยุดเปิดชุดใหม่ (ชุดที่เปิดอยู่ยังจัดการต่อ โดย Max ไม้ที่ต่ำจะหยุดการถัวเพิ่ม)</div>
+        <div className="row">
+          <label className="sub" htmlFor="gscope" style={{ minWidth: 130 }}>ตั้งค่าสำหรับ</label>
+          <select id="gscope" value={gscope} onChange={(e) => pickScope(e.target.value)}>
+            <option value="">ทุกคู่ (ค่าร่วม)</option>
+            {gScopes.map((k) => <option key={k} value={k}>{gName(k)}{symGrid[k] ? ' ★ ตั้งเฉพาะแล้ว' : ' (ใช้ค่าร่วมอยู่)'}</option>)}
+          </select>
+          {gscope && <span className="mute">{symGrid[gscope] ? `${gName(gscope)} ใช้ชุดของตัวเอง` : `${gName(gscope)} ยังใช้ค่าร่วม แก้แล้วกดบันทึกเพื่อแยกเป็นของคู่นี้`}</span>}
+        </div>
         {Object.keys(REGIME).map((rg) => (
           <div key={rg} className="row">
             <label className="sub" htmlFor={'g-' + rg} style={{ minWidth: 130 }}>{REGIME[rg]}</label>
@@ -445,7 +481,9 @@ export default function Page() {
             ))}
           </tbody>
         </table></div>
-        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { gridProfiles: grid.profiles, gridMap: grid.map }))}>บันทึกโปรไฟล์กริด</button></div>}
+        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', gscope ? { symGrid: { ...symGrid, [gscope]: { profiles: grid.profiles, map: grid.map } } } : { gridProfiles: grid.profiles, gridMap: grid.map }))}>{gscope ? `บันทึกให้ ${gName(gscope)}` : 'บันทึกโปรไฟล์กริด (ค่าร่วม)'}</button>
+          {gscope && symGrid[gscope] && <button className="btn" disabled={busy} onClick={() => { if (!window.confirm(`ลบชุดเฉพาะของ ${gName(gscope)} แล้วกลับไปใช้ค่าร่วม?`)) return; const rest = { ...symGrid }; delete rest[gscope]; act(async () => { await api('/api/settings', { symGrid: rest }); pickScope(''); }); }}>ลบชุดเฉพาะ ใช้ค่าร่วม</button>}
+        </div>}
       </section>}
 
       <section className="card">

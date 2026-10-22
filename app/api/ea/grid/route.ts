@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
-import { DEFAULT_GRID_MAP, DEFAULT_PROFILES } from '@/lib/profiles';
+import { gridFor } from '@/lib/profiles';
 import { ak, getJSON, getSettings, setJSON } from '@/lib/store';
-import { externalRegime, regimeFor, symKey } from '@/lib/regime';
+import { externalRegime, regimeFor, saveSymRow, symKey } from '@/lib/regime';
 import { regimeFromBars } from '@/lib/chart';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import { evKey, newsFor, newsText, noteSymbol } from '@/lib/news';
@@ -37,8 +37,7 @@ export async function POST(req: Request) {
   const useExt = settings.regimeSource === 'webhook' || settings.regimeSource === 'both';
   const ext = !useExt ? null : await externalRegime(ind.symbol, acct);   // regime sent by a TradingView alert
   const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
-    const pid0 = settings.gridMap[r.regime] ?? DEFAULT_GRID_MAP[r.regime] ?? 'defensive';
-    const prof = settings.gridProfiles[pid0] ?? DEFAULT_PROFILES.defensive;
+    const { prof } = gridFor(settings, ind.symbol, r.regime);
     await setJSON(ak('decision', acct), {
       regime: r.regime, confidence: r.confidence, reason: r.reason, provider: r.provider ?? null, model: r.model ?? '',
       symbol: ind.symbol, tf: ind.tf, ts: r.ts, kind: 'grid', strategy_id: prof.id, strategy: prof.name,
@@ -92,8 +91,8 @@ export async function POST(req: Request) {
     await writeDecision({ regime: d.regime, confidence: d.confidence, reason: d.reason, provider: (d as any).provider, model: (d as any).model, ts: st.ts });
   }
 
-  const pid = settings.gridMap[st.regime] ?? DEFAULT_GRID_MAP[st.regime] ?? 'defensive';
-  const f = settings.gridProfiles[pid] ?? DEFAULT_PROFILES.defensive;
+  const { prof: f, scoped } = gridFor(settings, ind.symbol, st.regime);   // this pair's own profile set if it has one
+  await saveSymRow(acct, { symbol: ind.symbol, tf: ind.tf, ts: Date.now(), regime: st.regime, confidence: Number(st.confidence), reason: String(st.reason ?? ''), profile: f.name + (scoped ? ' (เฉพาะคู่)' : ''), hold: !!st.hold, price: ind.price });
   const sig = [f.id, +f.buy, +f.sell, f.lot, f.lotMult, f.step, f.stepW, f.stepA, f.max, f.tpN, f.tpO, f.recMult].join('|'); // EA re-applies only when this changes
   const lines = [
     'ok=1', `hold=${st.hold ? 1 : 0}`, `regime=${st.regime}`, `conf=${Number(st.confidence).toFixed(2)}`, `profile=${f.id}`, `sig=${sig}`,

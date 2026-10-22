@@ -18,3 +18,13 @@ export const DEFAULT_PROFILES: Record<string, Profile> = {
   defensive: { id: 'defensive', name: 'Defensive หยุดเปิดชุดใหม่', buy: false, sell: false, lot: 0.01, lotMult: 1.0, step: 1000, stepW: 2.0, stepA: 3.0, max: 1, tpN: 3, tpO: 5, recMult: 1.0 },
 };
 export const DEFAULT_GRID_MAP: Record<string, string> = { trend_up: 'trend_buy', trend_down: 'trend_sell', range: 'range', volatile: 'defensive', news: 'defensive' };
+
+// Grid profile for one symbol and regime. A pair can have its own profile set (settings.symGrid, keyed by the first 6 letters/digits
+// of the symbol, e.g. XAUUSD); a pair without one uses the shared set.
+export function gridFor(s: { gridProfiles: Record<string, Profile>; gridMap: Record<string, string>; symGrid?: Record<string, { profiles: Record<string, Profile>; map: Record<string, string> }> }, symbol: string, regime: string) {
+  const k = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const o = s.symGrid?.[k];
+  const pid = (o?.map ?? s.gridMap)[regime] ?? DEFAULT_GRID_MAP[regime] ?? 'defensive';
+  const prof = (o?.profiles ?? s.gridProfiles)[pid] ?? s.gridProfiles[pid] ?? DEFAULT_PROFILES.defensive;
+  return { pid, prof, scoped: !!o };
+}

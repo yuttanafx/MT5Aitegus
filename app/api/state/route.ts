@@ -2,7 +2,7 @@ import { STRATEGIES } from '@/lib/strategies';
 import { pickAcct, who } from '@/lib/auth';
 import { ak, getCmds, getJSON, getSettings, getStoredKeys, getUsers, setJSON } from '@/lib/store';
 import { newsView } from '@/lib/news';
-import { symKey } from '@/lib/regime';
+import { listSymRows, symKey } from '@/lib/regime';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
@@ -18,10 +18,14 @@ export async function GET(req: Request) {
   const keys = Object.fromEntries((['anthropic', 'openai', 'google'] as const).map((p) => [p, !!(saved[p] || env[p])]));
   const keyHints = Object.fromEntries((['anthropic', 'openai', 'google'] as const).map((p) => [p, saved[p] ? mask(saved[p]) : env[p] ? 'จาก Vercel' : '']));
   const admin = me.role === 'admin';
-  const chart = decision?.symbol && decision?.tf ? await getJSON<any>(`bars:${symKey(decision.symbol)}:${decision.tf}`, null) : null; // candles last sent by an EA for this symbol
+  const symbols = await listSymRows(acct);   // every pair this account's EA(s) have reported
+  const want = new URL(req.url).searchParams.get('sym');
+  const selRow = symbols.find((r) => r.key === want) ?? symbols.find((r) => decision?.symbol && r.key === symKey(decision.symbol)) ?? symbols[0] ?? null;
+  const cs = selRow ? { s: selRow.key, tf: selRow.tf } : decision?.symbol && decision?.tf ? { s: symKey(decision.symbol), tf: decision.tf } : null;
+  const chart = cs ? await getJSON<any>(`bars:${cs.s}:${cs.tf}`, null) : null; // candles last sent by an EA for the selected pair
   const users = await getUsers();
   const cur = acct === 'main' ? null : users.find((u) => u.id === acct);
   const account = { id: acct, name: cur ? cur.name : 'บัญชีหลัก', login: cur?.login ?? '' };
   const accounts = admin ? [{ id: 'main', name: 'บัญชีหลัก (Admin)', login: '' }, ...users.map((u) => ({ id: u.id, name: u.name, login: u.login ?? '' }))] : undefined;
-  return Response.json({ chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
+  return Response.json({ symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
 }
