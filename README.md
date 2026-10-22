@@ -75,6 +75,12 @@ Dashboard → "แหล่งสภาพตลาด" → เลือก **�
 - ตัวแปรเสริม (ไม่ใส่ก็ได้): `TV_EXCHANGES` (ค่าเริ่มต้น `OANDA,FX_IDC,FOREXCOM,CAPITALCOM`), `TV_SYMBOL_MAP` เช่น `{"XAUUSD":"OANDA:XAUUSD"}`
 - ฟีดนี้ไม่ใช่ API ทางการของ TradingView อาจเปลี่ยนหรือถูกจำกัดได้ในอนาคต
 
+## ปุ่ม BUY / SELL เปิดออเดอร์แรกจากหน้าเว็บ
+Dashboard → การ์ด "เปิดออเดอร์แรกเอง" → ใส่ Symbol (เว้นว่าง = คู่ล่าสุดที่ EA ส่งมา) และ Lot → กด BUY หรือ SELL → ยืนยัน คำสั่งเข้าคิวเดียวกับออเดอร์อื่น (จำกัด lot ด้วย `MAX_LOT`, กันช่วงข่าว, หยุดชั่วคราวได้) แล้ว EA เปิดไม้ภายในประมาณ 3 วินาที โดยใช้ Magic เดียวกับกริด กริดจึงดูแลไม้นี้ต่อ
+- ใช้ EA ไฟล์ `Terravolteco_SmartGold_V22_AI_WebOrder.mq5` (มีอินพุต `AI_WebOrders`, `AI_CapWebLot`, `AI_CmdPollSec`)
+- แต่ละกราฟรับเฉพาะคำสั่งของ symbol ตัวเอง
+- ถ้า EMA50/EMA200 ของกราฟไม่ตรงทิศ กริดจะไม่เปิดไม้ถัวให้ฝั่งนั้น
+
 ## ส่งสภาพตลาดเข้า webhook (ทางเลือก) (ให้ EA กริดเทรดตามสภาพตลาดจาก TradingView)
 1. TradingView → เปิด Pine Editor → วางโค้ดจาก `tradingview/RegimeAlert.pine` → Add to chart (ปรับ ADX/EMA ได้ ใส่เลขบัญชี MT5 ถ้าต้องการให้ใช้กับบัญชีเดียว เว้นว่าง = ทุกบัญชี)
 2. Create Alert → Condition เลือกอินดิเคเตอร์นี้ + "Any alert() function call" → Webhook URL = `https://YOUR-APP.vercel.app/api/webhook?key=WEBHOOK_SECRET` (ข้อความปล่อยตามที่สคริปต์สร้างให้)

@@ -2,7 +2,7 @@ export type Mkt = { regime: string; confidence: number; strategy: string; reason
 export type Cmd = {
   id: string; ts: number; symbol: string; side: 'BUY' | 'SELL'; lot: number;
   sl?: number; tp?: number; status: 'pending' | 'sent' | 'done' | 'failed' | 'blocked';
-  source: 'webhook' | 'ai'; ticket?: number; price?: number; note?: string;
+  source: 'webhook' | 'ai' | 'manual'; ticket?: number; price?: number; note?: string;
   holdUntil?: number; mkt?: Mkt; // holdUntil: EA does not receive the order before this time (lets the dashboard read out a market summary first)
 };
 export type Settings = { holdSec: number; newsOn: boolean; newsBefore: number; newsAfter: number; newsImpact: 'High' | 'Medium'; newsUntil: number; provider: 'anthropic' | 'openai' | 'google'; model: string; paused: boolean; intervalMin: number; regimeSource: 'ai' | 'chart' | 'tradingview' | 'webhook' | 'both'; map: Record<string, string[]>; gridProfiles: Record<string, import('./profiles').Profile>; gridMap: Record<string, string> };

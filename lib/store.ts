@@ -29,7 +29,7 @@ export const getCmds = (acct = 'main') => getJSON<Cmd[]>(ak('cmds', acct), []);
 export const saveCmds = (c: Cmd[], acct = 'main') => setJSON(ak('cmds', acct), c.slice(0, 200));
 
 // Adds a command to the queue after risk checks. Blocked commands are kept for the log.
-export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & { mkt?: Mkt }, acct = 'main'): Promise<Cmd> {
+export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & { mkt?: Mkt; noHold?: boolean }, acct = 'main'): Promise<Cmd> {
   const cmds = await getCmds(acct);
   const settings = await getSettings();
   let reason: string | null = settings.paused ? 'ระบบถูกหยุดชั่วคราว' : null;
@@ -44,10 +44,11 @@ export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp
   const cmd: Cmd = { id: randomUUID().slice(0, 8), ts: Date.now(), status: reason ? 'blocked' : 'pending', note: reason ?? undefined, ...p };
   // Hold the order briefly ONLY while a dashboard with voice alerts is open (it pings /api/state?voice=1),
   // so the spoken market summary comes before the EA receives the order. Nobody listening = no delay.
-  if (!reason && settings.holdSec > 0) {
+  if (!reason && settings.holdSec > 0 && !p.noHold) {
     const voiceAt = await getJSON<number>(ak('voiceAt', acct), 0);
     if (Date.now() - voiceAt < 20_000) cmd.holdUntil = Date.now() + settings.holdSec * 1000;
   }
+  delete (cmd as any).noHold;
   await saveCmds([cmd, ...cmds], acct);
   return cmd;
 }

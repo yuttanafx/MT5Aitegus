@@ -38,6 +38,9 @@ export default function Page() {
   const [acct, setAcct] = useState('main'); // admin only: which trading account's data is shown
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
+  const [mSym, setMSym] = useState('');
+  const [mLot, setMLot] = useState('0.01');
+  const [mMsg, setMMsg] = useState('');
   const [hold, setHold] = useState(15);
   const [grid, setGrid] = useState<{ profiles: Record<string, any>; map: Record<string, string> } | null>(null);
   const [mapDraft, setMapDraft] = useState<Record<string, string[]> | null>(null);
@@ -123,7 +126,7 @@ export default function Page() {
 
   const api = useCallback(async (path: string, body?: any) => {
     const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', 'x-admin-key': key, ...(acct !== 'main' ? { 'x-acct': acct } : {}) }, body: body ? JSON.stringify(body) : undefined });
-    if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : 'เกิดข้อผิดพลาด ' + r.status);
+    if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : (await r.json().catch(() => null))?.error ?? 'เกิดข้อผิดพลาด ' + r.status);
     return r.json();
   }, [key, acct]);
 
@@ -306,6 +309,24 @@ export default function Page() {
       {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={d?.symbol ?? ''} tf={d?.tf ?? ''} regime={d?.regime} />}
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
+      <section className="card">
+        <h2>เปิดออเดอร์แรกเอง</h2>
+        <div className="row">
+          <label className="sub" htmlFor="msym">Symbol</label>
+          <input id="msym" style={{ width: 120 }} value={mSym} placeholder={d?.symbol ?? 'เช่น XAUUSD'} onChange={(e) => setMSym(e.target.value)} />
+          <label className="sub" htmlFor="mlot">Lot</label>
+          <input id="mlot" style={{ width: 80 }} inputMode="decimal" value={mLot} onChange={(e) => setMLot(e.target.value)} />
+          {(['BUY', 'SELL'] as const).map((sd) => (
+            <button key={sd} className={'btn ' + (sd === 'BUY' ? 'main' : '')} disabled={busy} onClick={() => {
+              const sym = (mSym.trim() || d?.symbol || '').toUpperCase();
+              if (!window.confirm(`ยืนยัน ${sd} ${sym || '(คู่ล่าสุดของ EA)'} ${mLot} ล็อต ส่งเข้า MT5 ทันที?`)) return;
+              act(async () => { const r = await api('/api/orders', { side: sd, lot: Number(mLot), symbol: mSym.trim() || undefined }); setMMsg(r.status === 'blocked' ? 'ถูกบล็อก: ' + (r.note ?? '') : `ส่งคำสั่ง ${sd} ${r.symbol} แล้ว รอ EA รับ (ไม่เกิน ~5 วินาที) ดูผลในตารางคำสั่ง`); });
+            }}>{sd === 'BUY' ? 'BUY ซื้อ' : 'SELL ขาย'}</button>
+          ))}
+        </div>
+        <div className="mute">{mMsg || 'ส่งคำสั่งเข้า MT5 ผ่านคิวเดียวกับออเดอร์อื่น (ตรวจ lot สูงสุด ข่าว และหยุดชั่วคราวเหมือนกัน) ไม่ตั้ง SL/TP ให้กริดดูแลการปิดเอง'}</div>
+      </section>
+
       <div className="grid">
         <section className="card">
           <div className="row" style={{ justifyContent: 'space-between' }}><h2>การตัดสินใจล่าสุดของ AI</h2><span className="mute">{d ? `${d.symbol} · ${d.tf} · ${new Date(d.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}</span></div>
@@ -436,7 +457,7 @@ export default function Page() {
               <tr key={c.id}>
                 <td>{new Date(c.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                 <td>{c.symbol}</td><td className={c.side === 'BUY' ? 'buy' : 'sell'}>{c.side}</td><td>{c.lot}</td>
-                <td>{c.source === 'ai' ? 'AI' : 'Webhook'}</td>
+                <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? 'สั่งเอง' : 'Webhook'}</td>
                 <td>{STATUS[c.status]}{c.note ? <div className="mute">{c.note}</div> : null}</td>
               </tr>
             ))}
@@ -521,7 +542,7 @@ function FloatOrb({ mode, onTap, onClose }: { mode: Mode; onTap: () => void; onC
 function orderSpeech(c: any): string {
   const m = c.mkt, i = m?.ind, n = (v: any) => Number(Number(v).toFixed(2));
   const head = c.status === 'pending' ? 'ก่อนเปิดออเดอร์ ' : 'เปิดออเดอร์แล้ว ';
-  const order = `${c.side === 'BUY' ? 'ซื้อ' : 'ขาย'} ${c.symbol} ${c.lot} ล็อต${c.source === 'webhook' ? ' ตามสัญญาณ TradingView' : ' ตามการวิเคราะห์ของ AI'}`;
+  const order = `${c.side === 'BUY' ? 'ซื้อ' : 'ขาย'} ${c.symbol} ${c.lot} ล็อต${c.source === 'webhook' ? ' ตามสัญญาณ TradingView' : c.source === 'manual' ? ' ตามที่คุณสั่งเอง' : ' ตามการวิเคราะห์ของ AI'}`;
   let mk = ' ยังไม่มีข้อมูลวิเคราะห์ตลาดล่าสุดของคู่นี้ประกอบสัญญาณ';
   if (m) {
     const rsi = i ? (i.rsi >= 70 ? ' RSI สูง เริ่มซื้อมากเกินไป' : i.rsi <= 30 ? ' RSI ต่ำ เริ่มขายมากเกินไป' : ` RSI ${Math.round(i.rsi)}`) : '';
