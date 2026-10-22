@@ -6,7 +6,7 @@ import { getSettings, setJSON } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
 const IDS = STRATEGIES.map((s) => s.id) as [string, ...string[]];
-const Body = z.object({ provider: z.enum(['anthropic', 'openai', 'google']).optional(), model: z.string().max(80).optional(), paused: z.boolean().optional(), intervalMin: z.number().int().min(1).max(240).optional(), map: z.record(z.enum(REGIMES), z.array(z.enum(IDS))).optional(), gridProfiles: z.record(z.string(), ProfileSchema).optional(), gridMap: z.record(z.enum(REGIMES), z.string()).optional() });
+const Body = z.object({ provider: z.enum(['anthropic', 'openai', 'google']).optional(), model: z.string().max(80).optional(), paused: z.boolean().optional(), intervalMin: z.number().int().min(1).max(240).optional(), holdSec: z.number().int().min(0).max(60).optional(), newsOn: z.boolean().optional(), newsBefore: z.number().int().min(5).max(180).optional(), newsAfter: z.number().int().min(5).max(180).optional(), newsImpact: z.enum(['High', 'Medium']).optional(), newsUntil: z.number().int().min(0).optional(), map: z.record(z.enum(REGIMES), z.array(z.enum(IDS))).optional(), gridProfiles: z.record(z.string(), ProfileSchema).optional(), gridMap: z.record(z.enum(REGIMES), z.string()).optional() });
 
 export async function POST(req: Request) {
   if ((await who(req))?.role !== 'admin') return Response.json({ error: 'unauthorized' }, { status: 401 });

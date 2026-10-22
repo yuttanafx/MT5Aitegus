@@ -69,14 +69,17 @@ export async function chat(message: string, context: string) {
 // Economic / macro trend analysis (chat only). Advisory text: it never touches orders, strategies,
 // grid profiles or any trading setting. Live web search is used when the provider supports it.
 // ---------------------------------------------------------------------------------------------
+export const NEWS_RE = /ข่าว|ปฏิทินเศรษฐกิจ|\b(nfp|cpi|fomc|calendar|news)\b/i;
 export const MACRO_RE = /เศรษฐกิจ|เงินเฟ้อ|ดอกเบี้ย|เฟด|ธนาคารกลาง|ถดถอย|ว่างงาน|พันธบัตร|ค่าเงิน|ดอลลาร์|ราคาทอง|ทองคำ|น้ำมัน|ข่าวเศรษฐกิจ|ปัจจัยพื้นฐาน|\b(fed|fomc|cpi|ppi|nfp|gdp|pce|macro|inflation|recession|yield|rate (cut|hike)|dxy|tariff)\b/i;
 
 const NO_LIVE_NOTE = ' (หมายเหตุ: ครั้งนี้ไม่ได้ค้นข้อมูลสด ตัวเลขล่าสุดอาจไม่ครบ แนะนำเช็กปฏิทินเศรษฐกิจอีกครั้ง)';
 
-function macroSystem(context: string, live: boolean) {
+function macroSystem(context: string, live: boolean, o: { tech?: boolean; news?: boolean } = {}) {
   const today = new Date().toLocaleDateString('th-TH', { dateStyle: 'long', timeZone: 'Asia/Bangkok' });
   return [
     `คุณคือนักวิเคราะห์เศรษฐกิจมหภาคของระบบเทรด MT5 วันนี้คือ ${today} ตอบภาษาไทย ไม่ใช้ markdown เพราะจะถูกอ่านออกเสียง`,
+    ...(o.news ? ['ผู้ใช้ถามเรื่องข่าว: เริ่มด้วยข่าวแรงที่ใกล้ที่สุดจาก "ข่าวสำคัญที่กำลังจะมา" ในข้อมูลระบบ (ชื่อข่าว เวลา ค่าคาดการณ์เทียบค่าก่อนหน้า) บอกว่าระบบหยุดเปิดออเดอร์ใหม่ช่วงไหน แล้วอธิบายผลที่น่าจะมีต่อสินทรัพย์ที่ระบบเทรด ถ้าค้นเว็บได้ให้เสริมพาดหัวข่าวสำคัญล่าสุดที่กระทบสินทรัพย์นั้น (เช่นเหตุการณ์ภูมิรัฐศาสตร์) และบอกว่าข่าวด่วนที่ไม่มีกำหนดเวลาล่วงหน้า ระบบหยุดเทรดให้เองไม่ได้ ผู้ดูแลต้องกดปุ่มหยุดเพราะข่าวด่วน'] : []),
+    ...(o.tech ? ['ผู้ใช้ขอให้วิเคราะห์ตลาด: เริ่มด้วยมุมมองเชิงเทคนิค 2 ประโยคจากค่าอินดิเคเตอร์ MT5 ในข้อมูลระบบ (ทิศทาง EMA20/EMA50, โมเมนตัม RSI, ความแรงเทรนด์ ADX, ความผันผวน ATR) แล้วต่อด้วยปัจจัยเศรษฐกิจ รวมไม่เกิน 7 ประโยค'] : []),
     'ตอบ 4-6 ประโยค เรียงตามนี้: ภาพรวมแนวโน้ม → ปัจจัยหลักที่ขับเคลื่อน (เช่น ดอกเบี้ย เงินเฟ้อ ตลาดแรงงาน ค่าเงินดอลลาร์ ราคาพลังงาน) → ผลที่น่าจะมีต่อสินทรัพย์ที่ผู้ใช้ถาม หรือสินทรัพย์ที่ระบบกำลังเทรดอยู่ → สิ่งที่ควรระวัง/ตัวเลขข่าวที่จะออก',
     live ? 'ใช้ข้อมูลล่าสุดจากการค้นหา และบอกช่วงเวลาของข้อมูลที่อ้างถึง' : 'คุณไม่มีข้อมูลเรียลไทม์ ให้พูดถึงแนวโน้มเชิงโครงสร้างและปัจจัยที่ต้องจับตา',
     'ห้ามแต่งตัวเลขหรือวันที่ ถ้าไม่แน่ใจให้บอกว่าไม่แน่ใจ ห้ามรับประกันกำไร ห้ามสั่งให้ซื้อหรือขายตรง ๆ ให้พูดเป็นมุมมองและความเสี่ยง',
@@ -113,22 +116,45 @@ async function geminiSearch(key: string, id: string, system: string, message: st
   }
 }
 
-export async function macro(message: string, context: string) {
+export async function macro(message: string, context: string, o: { tech?: boolean; news?: boolean } = {}) {
   return withFallback(async (_m, p, id, keys) => {
     if (p === 'google') {
-      const g = await geminiSearch(keys.google!, id, macroSystem(context, true), message);
+      const g = await geminiSearch(keys.google!, id, macroSystem(context, true, o), message);
       return g.live ? g : { text: g.text + NO_LIVE_NOTE, live: false };
     }
     if (p === 'openai') {
       const { text } = await generateText({
         model: createOpenAI({ apiKey: keys.openai }).responses(id), temperature: 0.3,
         tools: { web_search_preview: createOpenAI({ apiKey: keys.openai }).tools.webSearchPreview({}) },
-        system: macroSystem(context, true), prompt: message,
+        system: macroSystem(context, true, o), prompt: message,
       });
       return { text, live: true };
     }
     // Anthropic (installed SDK has no web-search tool): answer from the model's own knowledge and say so.
-    const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false), prompt: message });
+    const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false, o), prompt: message });
     return { text: text.trim() + NO_LIVE_NOTE, live: false };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Market analysis on request ("วิเคราะห์ตลาดตอนนี้"): technical read of the latest indicator snapshot
+// the EA sent from MT5. Advisory text only; it never changes orders or settings.
+// ---------------------------------------------------------------------------------------------
+export const MARKET_RE = /วิเคราะห์(ตลาด|กราฟ|ทอง|ราคา)|สรุปตลาด|ภาพรวมตลาด|ทิศทาง(ตลาด|ราคา)|แนวโน้ม(ตลาด|ราคา)|ตลาด(ตอนนี้|เป็น(ยังไง|อย่างไร)|ไปทางไหน|ขึ้นหรือลง)|\bmarket (analysis|outlook|summary)\b/i;
+
+export async function analyze(message: string, context: string) {
+  return withFallback(async (model) => {
+    const { text } = await generateText({
+      model, temperature: 0.3,
+      system: [
+        'คุณคือนักวิเคราะห์ตลาดของระบบเทรด MT5 ตอบภาษาไทย ไม่ใช้ markdown เพราะจะถูกอ่านออกเสียง',
+        'วิเคราะห์เชิงเทคนิคจากค่าอินดิเคเตอร์ล่าสุดในข้อมูลระบบเท่านั้น ตอบ 4-5 ประโยค เรียงตามนี้: สรุปทิศทาง (ดู EMA20 เทียบ EMA50 และราคาเทียบ EMA) → ความแรงเทรนด์ (ADX เกิน 25 = เทรนด์ชัด ต่ำกว่า 20 = ไซด์เวย์) → โมเมนตัม (RSI เกิน 70 = ซื้อมากเกินไป ต่ำกว่า 30 = ขายมากเกินไป) → ความผันผวน (ATR เทียบราคา) พร้อมระยะ ±1.5 ATR เป็นแนวรับ/ต้านคร่าว ๆ → ข้อควรระวัง',
+        'บอก symbol, ไทม์เฟรม และว่าข้อมูลเก่าเท่าไร (ageMin นาที) ถ้าเกิน 60 นาทีให้เตือนว่าข้อมูลอาจไม่ทันตลาด ถ้ายังไม่มีข้อมูลอินดิเคเตอร์ให้บอกตรง ๆ ว่ายังไม่มีข้อมูลจาก EA ถ้า dataSource เป็นตัวอย่างจากปุ่มทดสอบ ให้บอกว่าข้อมูลนี้เป็นตัวเลขตัวอย่าง ไม่ใช่ตลาดจริง และไม่วิเคราะห์ราวกับเป็นตลาดจริง',
+        'ห้ามแต่งตัวเลข ห้ามรับประกันกำไร ห้ามสั่งซื้อขายตรง ๆ ให้พูดเป็นมุมมองและความเสี่ยง นี่ไม่เปลี่ยนคำสั่งหรือการตั้งค่าของระบบ',
+        context,
+      ].join('\n'),
+      prompt: message,
+    });
+    return { text };
   });
 }

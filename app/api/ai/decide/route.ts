@@ -3,6 +3,8 @@ import { isAdmin, isEA } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
 import { addCmd, getJSON, getSettings, setJSON } from '@/lib/store';
+import type { Mkt } from '@/lib/types';
+import { newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -32,7 +34,9 @@ export async function POST(req: Request) {
     await setJSON('lastrun:' + ind.symbol, Date.now());
   }
 
-  const d = await decide(ind);
+  await noteSymbol(ind.symbol);
+  const nw = await newsFor(ind.symbol, settings);   // strong news near this symbol -> no AI call, regime = news (no strategies mapped = no trade)
+  const d = nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : await decide(ind);
 
   // Strategies for this regime (an empty list = do not trade in this regime).
   const ids = settings.map?.[d.regime] ?? DEFAULT_MAP[d.regime] ?? [];
@@ -44,18 +48,20 @@ export async function POST(req: Request) {
   const ev = best?.ev ?? null;
   const pass = !!s && !!ev?.passed && d.confidence >= Number(process.env.MIN_CONFIDENCE ?? 0.6);
 
+  const snap = { price: ind.price, adx: ind.adx, rsi: ind.rsi, atr: ind.atr, ema20: ind.ema20, ema50: ind.ema50 };
   let cmdId: string | undefined;
   if (pass && p.data.execute && s) {
     const buy = s.side === 'BUY';
     const cmd = await addCmd({
       symbol: ind.symbol, side: s.side, lot: p.data.lot ?? 0.01, source: 'ai',
+      mkt: { regime: d.regime, confidence: d.confidence, strategy: s.name, reason: d.reason, tf: ind.tf, ts: Date.now(), ind: snap } as Mkt,
       sl: r5(ind.price + (buy ? -1.5 : 1.5) * ind.atr), tp: r5(ind.price + (buy ? 2.5 : -2.5) * ind.atr),
     });
     cmdId = cmd.id;
   }
   const out = {
     ...d, symbol: ind.symbol, tf: ind.tf, ts: Date.now(), strategy_id: s?.id ?? 'no_trade', strategy: s?.name ?? 'ไม่เทรด',
-    candidates: cands.map((c) => c.name), eval: ev, pass, cmdId, src: fromEA ? 'ea' : 'test',
+    candidates: cands.map((c) => c.name), eval: ev, pass, cmdId, src: fromEA ? 'ea' : 'test', ind: snap, newsGuard: !!nw.active,
   };
   await setJSON('decision', out);
   return Response.json(out);

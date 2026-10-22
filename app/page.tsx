@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import NewsCard from '@/components/NewsCard';
 
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
 const STATUS: Record<string, string> = { pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' };
@@ -11,6 +12,7 @@ const REGIME_HINT: Record<string, string> = {
 };
 const GRID_COLS: [string, string, number][] = [['lot', 'Lot เริ่ม', 0.01], ['lotMult', 'Lot x', 0.1], ['step', 'Step (pts)', 50], ['stepW', 'Step W', 0.1], ['stepA', 'Step A', 0.1], ['max', 'Max ไม้', 1], ['tpN', 'TP ปกติ $', 0.5], ['tpO', 'TP เก่า $', 0.5], ['recMult', 'Rec x', 0.1]];
 const INTERVALS = [1, 3, 5, 10, 15, 30, 60, 120];
+const HOLDS = [0, 10, 15, 20, 30];
 type Mode = 'idle' | 'listening' | 'speaking';
 
 export default function Page() {
@@ -33,6 +35,7 @@ export default function Page() {
   const [issued, setIssued] = useState<{ name: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
+  const [hold, setHold] = useState(15);
   const [grid, setGrid] = useState<{ profiles: Record<string, any>; map: Record<string, string> } | null>(null);
   const [mapDraft, setMapDraft] = useState<Record<string, string[]> | null>(null);
   const [autoVoice, setAutoVoice] = useState(false);
@@ -121,10 +124,10 @@ export default function Page() {
     return r.json();
   }, [key]);
 
-  const load = useCallback(() => api('/api/state').then((d) => {
+  const load = useCallback(() => api('/api/state' + (autoVoice ? '?voice=1' : '')).then((d) => {
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
-  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data]);  // eslint-disable-line react-hooks/exhaustive-deps
+    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setHold((v) => (data ? v : d.settings.holdSec ?? 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
+  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data, autoVoice]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   loadRef.current = load;
   useEffect(() => { if (!key) return; load(); const t = setInterval(() => { if (!pipRef.current) load(); }, 5000); return () => clearInterval(t); }, [key, load]);
@@ -154,6 +157,48 @@ export default function Page() {
     const text = `${dd.symbol} ตลาดเปลี่ยนเป็น${REGIME[dd.regime] ?? dd.regime} ` +
       (dd.kind === 'grid' ? `สลับไปใช้โปรไฟล์ ${dd.strategy} ` : dd.strategy_id === 'no_trade' ? 'ยังไม่เข้าเทรด ' : `AI เลือกกลยุทธ์ ${dd.strategy}${dd.pass ? ' และผ่านเงื่อนไขเข้าเทรด' : ' แต่ยังไม่ผ่านเงื่อนไข'} `) + (dd.reason || '');
     setHeard('(แจ้งเตือนอัตโนมัติ)'); setReply(text); setMode('speaking'); speak(text);
+  }, [data, autoVoice]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // News guard alerts: heads-up before the window, when new orders stop, and when trading resumes.
+  const newsState = useRef<Record<string, string> | null>(null);
+  useEffect(() => {
+    const n = data?.news; if (!n) return;
+    const calc = (g: any): { st: string; text: string } => {
+      const e = g.active ?? g.next, name = e ? `${e.cur === 'ALL' ? '' : e.cur + ' '}${e.title}` : '';
+      if (g.active) return { st: 'on|' + e.cur + e.title + e.ts, text: `ตอนนี้เข้าช่วงข่าวแรง ${name} ระบบหยุดเปิดออเดอร์ใหม่ของ ${g.symbol} แล้ว จนถึงเวลา ${new Date(g.resumeAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` };
+      const mins = g.next ? Math.round((g.next.ts - Date.now()) / 60000) : 0;
+      if (g.next && mins - n.before <= 10) return { st: 'pre|' + e.cur + e.title + e.ts, text: `ข่าวแรง ${name} จะออกในอีก ${mins} นาที ระบบจะหยุดเปิดออเดอร์ใหม่ของ ${g.symbol} ในอีก ${Math.max(0, mins - n.before)} นาที` };
+      return { st: 'idle', text: '' };
+    };
+    const prev = newsState.current;
+    const next: Record<string, string> = {};
+    let say = '';
+    for (const g of n.groups as any[]) {
+      const c = calc(g); next[g.symbol] = c.st;
+      const p = prev?.[g.symbol];
+      if (prev === null || prev === undefined || p === c.st) continue; // first load or nothing changed
+      if (c.st.startsWith('on|') || c.st.startsWith('pre|')) say += c.text + '. ';
+      else if (p?.startsWith('on|')) say += `ช่วงข่าวผ่านไปแล้ว ระบบกลับมาเปิดออเดอร์ใหม่ของ ${g.symbol} ตามปกติ. `;
+    }
+    if (say && autoVoice && modeRef.current !== 'idle') return; // busy: keep the old state so it is announced on the next refresh
+    newsState.current = next;
+    if (say && autoVoice) { setHeard('(แจ้งเตือนข่าว)'); setReply(say.trim()); setMode('speaking'); speak(say); }
+  }, [data, autoVoice]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Read out a market summary for every new order (the server holds the order for a few seconds while this dashboard listens).
+  const announced = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const cmds: any[] | undefined = data?.cmds; if (!cmds) return;
+    if (announced.current === null) { announced.current = new Set(cmds.map((c) => c.id)); return; } // never read out old history
+    const seen = announced.current;
+    if (!autoVoice) { cmds.forEach((c) => seen.add(c.id)); return; }
+    for (const c of cmds) if (!seen.has(c.id) && (c.status === 'blocked' || c.status === 'failed')) seen.add(c.id);
+    if (modeRef.current !== 'idle') return; // busy: try again on the next refresh
+    const c = [...cmds].reverse().find((x) => !seen.has(x.id) && (x.status === 'pending' || ((x.status === 'sent' || x.status === 'done') && Date.now() - x.ts < 90_000)));
+    if (!c) return;
+    seen.add(c.id);
+    const text = orderSpeech(c);
+    setHeard('(สรุปตลาดก่อนเปิดออเดอร์)'); setReply(text); setMode('speaking'); speak(text);
   }, [data, autoVoice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAutoVoice = () => {
@@ -242,11 +287,15 @@ export default function Page() {
             <button className="btn main" onClick={() => toggleMic()}>{mode === 'idle' ? 'คุยกับ AI' : 'หยุด'}</button>
             <button className="btn" onClick={() => ask('ตอนนี้ใช้กลยุทธ์อะไร')}>ตอนนี้ใช้กลยุทธ์อะไร</button>
             <button className="btn" onClick={() => ask('สรุปคำสั่งล่าสุด')}>สรุปคำสั่งล่าสุด</button>
+            <button className="btn" onClick={() => ask('วิเคราะห์ตลาดตอนนี้')}>วิเคราะห์ตลาดตอนนี้</button>
+            <button className="btn" onClick={() => ask('มีข่าวแรงอะไรใกล้นี้บ้าง')}>ข่าวแรงใกล้นี้</button>
             <button className={'btn ' + (autoVoice ? 'main' : '')} aria-pressed={autoVoice} onClick={toggleAutoVoice}>{autoVoice ? '🔔 เสียงแจ้งเตือน: เปิด' : '🔕 เสียงแจ้งเตือน: ปิด'}</button>
             <button className={'btn ' + (orb !== 'off' ? 'main' : '')} aria-pressed={orb !== 'off'} onClick={() => (orb === 'off' ? openOrb() : closeOrb())}>{orb === 'off' ? '🔮 เปิดลูกกลมลอย' : '🔮 ปิดลูกกลมลอย'}</button>
           </div>
         </div>
       </section>
+
+      {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
       <div className="grid">
         <section className="card">
@@ -268,6 +317,14 @@ export default function Page() {
             </select>
             <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { intervalMin: iv }))}>บันทึก</button>
             <span className="mute">ตอนนี้: {data?.settings?.intervalMin ?? 15} นาที</span>
+          </div>}
+          {isAdmin && <div className="row">
+            <label className="sub" htmlFor="hold">หน่วงออเดอร์ก่อนส่งเข้า MT5 เพื่อพูดสรุปตลาด</label>
+            <select id="hold" value={hold} onChange={(e) => setHold(Number(e.target.value))}>
+              {HOLDS.map((m) => <option key={m} value={m}>{m ? m + ' วินาที' : 'ไม่หน่วง'}</option>)}
+            </select>
+            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { holdSec: hold }))}>บันทึก</button>
+            <span className="mute">ตอนนี้: {data?.settings?.holdSec ?? 15} วินาที (หน่วงเฉพาะตอนเปิดหน้านี้พร้อมเสียงแจ้งเตือนอยู่)</span>
           </div>}
           {!isAdmin && <div className="mute">AI วิเคราะห์ทุก {data?.settings?.intervalMin ?? 15} นาที</div>}
           {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>}
@@ -432,4 +489,18 @@ function FloatOrb({ mode, onTap, onClose }: { mode: Mode; onTap: () => void; onC
       <button className="orb-x" aria-label="ปิดลูกกลมลอย" onPointerDown={(e) => e.stopPropagation()} onClick={onClose}>×</button>
     </div>
   );
+}
+
+// Spoken market summary for an order, built from the analysis stored with the order (no AI call, so it is instant and never invents numbers).
+function orderSpeech(c: any): string {
+  const m = c.mkt, i = m?.ind, n = (v: any) => Number(Number(v).toFixed(2));
+  const head = c.status === 'pending' ? 'ก่อนเปิดออเดอร์ ' : 'เปิดออเดอร์แล้ว ';
+  const order = `${c.side === 'BUY' ? 'ซื้อ' : 'ขาย'} ${c.symbol} ${c.lot} ล็อต${c.source === 'webhook' ? ' ตามสัญญาณ TradingView' : ' ตามการวิเคราะห์ของ AI'}`;
+  let mk = ' ยังไม่มีข้อมูลวิเคราะห์ตลาดล่าสุดของคู่นี้ประกอบสัญญาณ';
+  if (m) {
+    const rsi = i ? (i.rsi >= 70 ? ' RSI สูง เริ่มซื้อมากเกินไป' : i.rsi <= 30 ? ' RSI ต่ำ เริ่มขายมากเกินไป' : ` RSI ${Math.round(i.rsi)}`) : '';
+    mk = ` สรุปตลาด สภาพตลาด${REGIME[m.regime] ?? m.regime}` + (i ? ` ADX ${Math.round(i.adx)} ${i.ema20 > i.ema50 ? 'EMA20 อยู่เหนือ EMA50' : 'EMA20 อยู่ใต้ EMA50'}${rsi}` : '') + (m.strategy ? ` กลยุทธ์ ${m.strategy}` : '') + (m.reason ? ` ${m.reason}` : '');
+  }
+  const risk = (c.sl ? ` ตัดขาดทุนที่ ${n(c.sl)}` : ' ไม่ได้ตั้งจุดตัดขาดทุน') + (c.tp ? ` เป้าหมายที่ ${n(c.tp)}` : '');
+  return head + order + '.' + mk + '.' + risk;
 }

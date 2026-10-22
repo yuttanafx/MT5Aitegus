@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isWebhook } from '@/lib/auth';
-import { addCmd } from '@/lib/store';
+import { addCmd, getJSON } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
 const Body = z.object({
@@ -16,6 +16,10 @@ export async function POST(req: Request) {
   if (!isWebhook(req)) return Response.json({ error: 'unauthorized' }, { status: 401 });
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: 'bad body', issues: p.error.issues }, { status: 400 });
-  const cmd = await addCmd({ ...p.data, symbol: p.data.symbol.toUpperCase(), source: 'webhook' });
+  const symbol = p.data.symbol.toUpperCase();
+  const dec = await getJSON<any>('decision', null); // latest AI analysis, attached only if it is the same symbol and fresh
+  const mkt = dec && dec.symbol === symbol && dec.ind && Date.now() - dec.ts < 30 * 60_000
+    ? { regime: dec.regime, confidence: dec.confidence, strategy: dec.strategy, reason: dec.reason, tf: dec.tf, ts: dec.ts, ind: dec.ind } : undefined;
+  const cmd = await addCmd({ ...p.data, symbol, source: 'webhook', mkt });
   return Response.json({ id: cmd.id, status: cmd.status, note: cmd.note });
 }

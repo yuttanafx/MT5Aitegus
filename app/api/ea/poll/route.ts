@@ -12,6 +12,7 @@ export async function GET(req: Request) {
   let changed = false;
   for (const c of cmds) {
     if (c.status !== 'pending') continue;
+    if (c.holdUntil && now < c.holdUntil) continue; // still being announced on the dashboard
     changed = true;
     if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (EA ไม่ได้รับภายใน 2 นาที)'; continue; }
     c.status = 'sent';

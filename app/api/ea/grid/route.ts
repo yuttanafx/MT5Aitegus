@@ -3,6 +3,7 @@ import { isEA } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_GRID_MAP, DEFAULT_PROFILES } from '@/lib/profiles';
 import { getJSON, getSettings, setJSON } from '@/lib/store';
+import { evKey, newsFor, newsText, noteSymbol } from '@/lib/news';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -22,19 +23,31 @@ export async function POST(req: Request) {
   const key = 'gridstate:' + ind.symbol;
 
   let st = await getJSON<any>(key, null);
-  const due = !st || st.ts + settings.intervalMin * 60_000 - Date.now() <= 5_000;
-  if (due) {
+  await noteSymbol(ind.symbol);
+  const nw = await newsFor(ind.symbol, settings);   // cheap (cached calendar) and checked on every call, so the switch happens within one EA push
+  const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
+    const pid0 = settings.gridMap[r.regime] ?? DEFAULT_GRID_MAP[r.regime] ?? 'defensive';
+    const prof = settings.gridProfiles[pid0] ?? DEFAULT_PROFILES.defensive;
+    await setJSON('decision', {
+      regime: r.regime, confidence: r.confidence, reason: r.reason, provider: r.provider ?? null, model: r.model ?? '',
+      symbol: ind.symbol, tf: ind.tf, ts: r.ts, kind: 'grid', strategy_id: prof.id, strategy: prof.name,
+      candidates: [prof.name], eval: null, pass: false, src: 'ea', newsGuard: r.regime === 'news' && !!nw.active,
+      ind: { price: ind.price, adx: ind.adx, rsi: ind.rsi, atr: ind.atr, ema20: ind.ema20, ema50: ind.ema50 },
+    });
+  };
+  if (nw.active) {
+    const id = evKey(nw.active);
+    if (st?.newsId !== id) { // news window just started: switch to the news profile now
+      st = { regime: 'news', confidence: 1, reason: newsText(nw), hold: false, ts: Date.now(), newsId: id };
+      await setJSON(key, st);
+      await writeDecision({ ...st, model: 'news-guard' });
+    }
+  } else if (!st || st.newsId || st.ts + settings.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
     const d = await decide(ind);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);
     st = { regime: d.regime, confidence: d.confidence, reason: d.reason, hold: d.confidence < minConf, ts: Date.now() };
     await setJSON(key, st);
-    const pid = settings.gridMap[d.regime] ?? DEFAULT_GRID_MAP[d.regime] ?? 'defensive';
-    const prof = settings.gridProfiles[pid] ?? DEFAULT_PROFILES.defensive;
-    await setJSON('decision', {
-      regime: d.regime, confidence: d.confidence, reason: d.reason, provider: (d as any).provider ?? null, model: (d as any).model ?? '',
-      symbol: ind.symbol, tf: ind.tf, ts: st.ts, kind: 'grid', strategy_id: prof.id, strategy: prof.name,
-      candidates: [prof.name], eval: null, pass: false, src: 'ea',
-    });
+    await writeDecision({ regime: d.regime, confidence: d.confidence, reason: d.reason, provider: (d as any).provider, model: (d as any).model, ts: st.ts });
   }
 
   const pid = settings.gridMap[st.regime] ?? DEFAULT_GRID_MAP[st.regime] ?? 'defensive';
