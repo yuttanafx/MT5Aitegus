@@ -8,8 +8,7 @@ export const maxDuration = 30;
 export async function POST(req: Request) {
   const me = await who(req);
   if (!me) return Response.json({ error: 'unauthorized' }, { status: 401 });
-  // the real error is shown to the admin only (to find out what is wrong); other users get the generic text
-  const detail = (e: any) => (me.role === 'admin' ? `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]` : '');
+  const detail = (e: any) => `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]`; // errors come from the caller's own key/provider
   const { message } = await req.json().catch(() => ({ message: '' }));
   if (!message || typeof message !== 'string') return Response.json({ error: 'bad body' }, { status: 400 });
   const acct = await pickAcct(req, me);
@@ -27,7 +26,7 @@ export async function POST(req: Request) {
   // Everything else is answered exactly as before.
   if (MACRO_RE.test(message) || NEWS_RE.test(message)) {
     try {
-      const r = await macro(message.slice(0, 500), ctx, { tech: MARKET_RE.test(message), news: NEWS_RE.test(message) }); // "analyse the market + economy" = technical read first
+      const r = await macro(message.slice(0, 500), ctx, { tech: MARKET_RE.test(message), news: NEWS_RE.test(message) }, acct); // "analyse the market + economy" = technical read first
       return Response.json({ text: r.text, provider: r.provider, live: r.live });
     } catch (e) {
       return Response.json({ text: 'วิเคราะห์เศรษฐกิจไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) });
@@ -35,14 +34,14 @@ export async function POST(req: Request) {
   }
   if (MARKET_RE.test(message)) {
     try {
-      const r = await analyze(message.slice(0, 500), ctx);
+      const r = await analyze(message.slice(0, 500), ctx, acct);
       return Response.json({ text: r.text, provider: r.provider });
     } catch (e) {
       return Response.json({ text: 'วิเคราะห์ตลาดไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) });
     }
   }
   try {
-    const r = await chat(message.slice(0, 500), ctx);
+    const r = await chat(message.slice(0, 500), ctx, acct);
     return Response.json({ text: r.text, provider: r.provider });
   } catch (e) {
     return Response.json({ text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) });

@@ -2,6 +2,7 @@ import { STRATEGIES } from '@/lib/strategies';
 import { pickAcct, who } from '@/lib/auth';
 import { ak, getCmds, getJSON, getSettings, getStoredKeys, getUsers, setJSON } from '@/lib/store';
 import { newsView } from '@/lib/news';
+import { getAiConf } from '@/lib/aiconf';
 import { listSymRows, symKey } from '@/lib/regime';
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,12 @@ export async function GET(req: Request) {
   const keys = Object.fromEntries((['anthropic', 'openai', 'google'] as const).map((p) => [p, !!(saved[p] || env[p])]));
   const keyHints = Object.fromEntries((['anthropic', 'openai', 'google'] as const).map((p) => [p, saved[p] ? mask(saved[p]) : env[p] ? 'จาก Vercel' : '']));
   const admin = me.role === 'admin';
+  // AI settings of the account being viewed. A member only ever sees (a masked hint of) their OWN key, never the admin's.
+  const conf = await getAiConf(acct);
+  const P3 = ['anthropic', 'openai', 'google'] as const;
+  const ai = conf.own
+    ? { own: true, provider: conf.provider, model: conf.model, intervalMin: conf.intervalMin, keys: Object.fromEntries(P3.map((p) => [p, !!conf.keys[p]])), keyHints: Object.fromEntries(P3.map((p) => [p, mask(conf.keys[p])])) }
+    : { own: false, provider: conf.provider, model: conf.model, intervalMin: conf.intervalMin, keys, keyHints };
   const symbols = await listSymRows(acct);   // every pair this account's EA(s) have reported
   const want = new URL(req.url).searchParams.get('sym');
   const selRow = symbols.find((r) => r.key === want) ?? symbols.find((r) => decision?.symbol && r.key === symKey(decision.symbol)) ?? symbols[0] ?? null;
@@ -27,5 +34,5 @@ export async function GET(req: Request) {
   const cur = acct === 'main' ? null : users.find((u) => u.id === acct);
   const account = { id: acct, name: cur ? cur.name : 'บัญชีหลัก', login: cur?.login ?? '' };
   const accounts = admin ? [{ id: 'main', name: 'บัญชีหลัก (Admin)', login: '' }, ...users.map((u) => ({ id: u.id, name: u.name, login: u.login ?? '' }))] : undefined;
-  return Response.json({ symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
+  return Response.json({ ai, symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
 }

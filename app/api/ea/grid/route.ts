@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
 import { gridFor } from '@/lib/profiles';
 import { ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { getAiConf } from '@/lib/aiconf';
 import { externalRegime, regimeFor, saveSymRow, symKey } from '@/lib/regime';
 import { regimeFromBars } from '@/lib/chart';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
   if (!p.success) return new Response('bad body', { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
   const settings = await getSettings();
+  const conf = await getAiConf(acct); // this account's own AI settings
   const key = ak('gridstate:' + ind.symbol, acct);
 
   let st = await getJSON<any>(key, null);
@@ -83,8 +85,8 @@ export async function POST(req: Request) {
   } else if (settings.regimeSource === 'webhook') { // webhook only: nothing valid yet -> EA keeps its current settings, no AI cost
     st = st ?? { regime: 'volatile', confidence: 0, reason: 'รอสัญญาณสภาพตลาดจาก webhook', hold: true, ts: Date.now() };
     if (st.extTs === undefined) st = { ...st, hold: true };
-  } else if (!st || st.newsId || st.ts + settings.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
-    const d = await regimeFor(ind, settings.intervalMin);
+  } else if (!st || st.newsId || st.ts + conf.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
+    const d = await regimeFor(ind, conf.intervalMin, acct);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);
     st = { regime: d.regime, confidence: d.confidence, reason: d.reason, hold: d.confidence < minConf, ts: Date.now() };
     await setJSON(key, st);

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { randomBytes, randomUUID } from 'crypto';
 import { hashPw, who } from '@/lib/auth';
 import { ak, getJSON, getUsers, saveUsers } from '@/lib/store';
+import { hasOwnKey } from '@/lib/aiconf';
 import type { User } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,7 @@ const newEAKey = () => 'ea_' + randomBytes(18).toString('base64url');     // sho
 async function pub(users: User[]) {
   return Promise.all(users.map(async (u) => {
     const seen = await getJSON<{ ts: number } | null>(ak('seen', u.id), null);
-    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts };
+    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, aiKey: await hasOwnKey(u.id), createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts };
   }));
 }
 

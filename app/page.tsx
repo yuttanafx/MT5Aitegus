@@ -35,6 +35,10 @@ export default function Page() {
   const [newName, setNewName] = useState('');
   const [issued, setIssued] = useState<{ name: string; password?: string; eaKey?: string; login?: string } | null>(null);
   const [newLogin, setNewLogin] = useState('');
+  const [curPw, setCurPw] = useState('');
+  const [myNewPw, setMyNewPw] = useState('');
+  const [pwCopied, setPwCopied] = useState(false);
+  const resetting = useRef(false); // true for a few seconds after the member resets their own password (old-password requests may still be in flight)
   const [acct, setAcct] = useState('main'); // admin only: which trading account's data is shown
   const [copied, setCopied] = useState(false);
   const [iv, setIv] = useState(15);
@@ -134,8 +138,8 @@ export default function Page() {
 
   const load = useCallback(() => api('/api/state' + [autoVoice ? 'voice=1' : '', sel ? 'sym=' + encodeURIComponent(sel) : ''].filter(Boolean).map((x, i) => (i ? '&' : '?') + x).join('')).then((d) => {
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.settings.provider)); setModel((m) => (data ? m : d.settings.model || '')); setIv((v) => (data ? v : d.settings.intervalMin || 15)); setHold((v) => (data ? v : d.settings.holdSec ?? 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
-  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') logout(); else setErr(e.message); }), [api, data, autoVoice, sel]);  // eslint-disable-line react-hooks/exhaustive-deps
+    setProvider((p) => (data ? p : d.ai?.provider ?? d.settings.provider)); setModel((m) => (data ? m : d.ai?.model ?? d.settings.model ?? '')); setIv((v) => (data ? v : d.ai?.intervalMin ?? d.settings.intervalMin ?? 15)); setHold((v) => (data ? v : d.settings.holdSec ?? 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
+  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') { if (!resetting.current) logout(); } else setErr(e.message); }), [api, data, autoVoice, sel]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   loadRef.current = load;
   useEffect(() => { if (!key) return; load(); const t = setInterval(() => { if (!pipRef.current) load(); }, 5000); return () => clearInterval(t); }, [key, load]);
@@ -237,6 +241,16 @@ export default function Page() {
   toggleMicRef.current = toggleMic;
 
   const act = async (fn: () => Promise<any>) => { setBusy(true); try { await fn(); await load(); } catch (e: any) { setErr(e.message); } setBusy(false); };
+  // A member resets their own web password: the server issues a new random one, shown once. The new password becomes this session's key right away.
+  const resetMyPw = async () => {
+    resetting.current = true; setBusy(true); setErr('');
+    try {
+      const r = await api('/api/me', { action: 'resetPassword', current: curPw });
+      sessionStorage.setItem('hubkey', r.password); setKey(r.password); setMyNewPw(r.password); setPwCopied(false); setCurPw('');
+    } catch (e: any) { setErr(e.message); }
+    setBusy(false);
+    setTimeout(() => { resetting.current = false; }, 8000);
+  };
   const d = data?.decision;
   const symRows: any[] = data?.symbols ?? [];
   const selRow = symRows.find((r) => r.key === (sel || data?.selSym)) ?? null;
@@ -281,7 +295,7 @@ export default function Page() {
         <div className="row">
           <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}{!isAdmin && data?.account?.login ? ` · MT5 ${data.account.login}` : ''}</span>
           {isAdmin && data?.accounts?.length > 1 && (
-            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setAcct(e.target.value); }}>
+            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setData(null); setAcct(e.target.value); }}>
               {data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.login ? ` (${a.login})` : ''}</option>)}
             </select>
           )}
@@ -317,6 +331,28 @@ export default function Page() {
       </section>
 
       {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={selRow?.symbol ?? d?.symbol ?? ''} tf={selRow?.tf ?? d?.tf ?? ''} regime={selRow?.regime ?? d?.regime} />}
+      {!isAdmin && data && <section className="card">
+        <h2>บัญชีของฉัน</h2>
+        <div className="mute">{data.me?.name}{data.account?.login ? ` · บัญชี MT5 ${data.account.login}` : ''}</div>
+        {myNewPw ? (
+          <div className="bubble ai" role="status">
+            <div className="mute">รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด)</div>
+            <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{myNewPw}</div>
+            <div className="row">
+              <button className="btn main" onClick={async () => { try { await navigator.clipboard.writeText(myNewPw); setPwCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); } }}>{pwCopied ? 'คัดลอกแล้ว' : 'คัดลอกรหัส'}</button>
+              <button className="btn" onClick={() => setMyNewPw('')}>ปิด</button>
+            </div>
+          </div>
+        ) : (
+          <div className="row">
+            <label className="sub" htmlFor="cpw">รหัสผ่านปัจจุบัน</label>
+            <input id="cpw" type="password" autoComplete="current-password" value={curPw} onChange={(e) => setCurPw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && curPw.trim() && !busy) resetMyPw(); }} />
+            <button className="btn warn" disabled={busy || !curPw.trim()} onClick={resetMyPw}>รีเซ็ตรหัสผ่านของฉัน</button>
+          </div>
+        )}
+        <div className="mute">ระบบออกรหัสใหม่ที่สุ่มให้ (ตั้งเองไม่ได้ เพื่อความปลอดภัย) รหัสเดิมใช้ไม่ได้ทันที และอุปกรณ์อื่นที่ล็อกอินอยู่จะถูกออกจากระบบ ถ้าลืมรหัสจนเข้าไม่ได้ ให้ติดต่อผู้ดูแลเพื่อรีเซ็ตให้</div>
+      </section>}
+
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
       {symRows.length > 0 && <section className="card">
@@ -368,14 +404,14 @@ export default function Page() {
             </div>}
             {d.kind === 'grid' ? <span className="chip ok">โปรไฟล์กริดของ EA</span> : <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>}
           </>)}
-          {isAdmin && <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+          <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
             <label className="sub" htmlFor="iv">ให้ AI วิเคราะห์ทุก</label>
             <select id="iv" value={iv} onChange={(e) => setIv(Number(e.target.value))}>
               {INTERVALS.map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + ' ชั่วโมง' : m + ' นาที'}</option>)}
             </select>
-            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { intervalMin: iv }))}>บันทึก</button>
-            <span className="mute">ตอนนี้: {data?.settings?.intervalMin ?? 15} นาที</span>
-          </div>}
+            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { intervalMin: iv }))}>บันทึก</button>
+            <span className="mute">ตอนนี้: {data?.ai?.intervalMin ?? data?.settings?.intervalMin ?? 15} นาที{data?.ai?.own ? ' · ยิ่งถี่ยิ่งใช้ token ของคุณมากขึ้น' : ''}</span>
+          </div>
           {isAdmin && <div className="row">
             <label className="sub" htmlFor="hold">หน่วงออเดอร์ก่อนส่งเข้า MT5 เพื่อพูดสรุปตลาด</label>
             <select id="hold" value={hold} onChange={(e) => setHold(Number(e.target.value))}>
@@ -395,33 +431,34 @@ export default function Page() {
             </select>
             <span className="mute">ใช้กับ EA กริด · "กราฟจาก EA" ใช้ ADX/EMA จากแท่งเทียนที่ EA ส่งมา (ต้องใช้ EA เวอร์ชันใหม่)</span>
           </div>}
-          {!isAdmin && <div className="mute">AI วิเคราะห์ทุก {data?.settings?.intervalMin ?? 15} นาที</div>}
           {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>}
         </section>
 
-        {isAdmin && <section className="card">
-          <h2>ผู้ให้บริการ AI</h2>
+        <section className="card">
+          <h2>ผู้ให้บริการ AI{data?.ai?.own ? ' (ของคุณ)' : ''}</h2>
+          {data?.ai?.own && <div className="mute">คุณใช้ API key ของตัวเอง ค่า token จะถูกเรียกเก็บจากบัญชีผู้ให้บริการ AI ของคุณโดยตรง ไม่ผ่านผู้ดูแล key เก็บแบบเข้ารหัสและไม่ถูกส่งกลับมาแสดง</div>}
+          {data?.ai?.own && !Object.values(data.ai.keys ?? {}).some(Boolean) && <div className="err" role="alert">ยังไม่มี API key ของคุณ จึงยังใช้ AI ไม่ได้ (คุยกับ AI, วิเคราะห์ตลาด, ให้ AI จัดสภาพตลาด) เลือกผู้ให้บริการ ใส่ key แล้วกด "บันทึก API key"</div>}
           <div className="row">
             {PROVIDERS.map(([id, name]) => (
               <button key={id} className={'btn ' + (provider === id ? 'main' : '')} onClick={() => setProvider(id)}>
-                {name}{data?.keys?.[id] ? '' : ' (ไม่มี key)'}
+                {name}{data?.ai?.keys?.[id] ? '' : ' (ไม่มี key)'}
               </button>
             ))}
           </div>
           <label className="sub" htmlFor="m">ชื่อโมเดล (เว้นว่างเพื่อใช้ค่าเริ่มต้น)</label>
           <input id="m" value={model} onChange={(e) => setModel(e.target.value)} placeholder="เช่น claude-sonnet-5-5" />
-          <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { provider, model }))}>บันทึก</button>
+          <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { provider, model: model.trim() }))}>บันทึก</button>
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 8 }}>
-            <label className="sub" htmlFor="ak">API key ของ {PROVIDERS.find(([id]) => id === provider)?.[1]}{data?.keyHints?.[provider] ? ` (ตอนนี้: ${data.keyHints[provider]})` : ''}</label>
+            <label className="sub" htmlFor="ak">API key ของ {PROVIDERS.find(([id]) => id === provider)?.[1]}{data?.ai?.keyHints?.[provider] ? ` (ตอนนี้: ${data.ai.keyHints[provider]})` : ''}</label>
             <input id="ak" type="password" autoComplete="off" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder={provider === 'anthropic' ? 'sk-ant-...' : provider === 'openai' ? 'sk-...' : 'AIza...'} />
             <div className="row">
               <button className="btn main" disabled={busy || !keyDraft.trim()} onClick={() => act(async () => { await api('/api/keys', { provider, key: keyDraft }); setKeyDraft(''); setSaved('บันทึก key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>บันทึก API key</button>
-              {data?.keys?.[provider] && <button className="btn" disabled={busy} onClick={() => act(async () => { await api('/api/keys', { provider, key: '' }); setSaved('ลบ key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>ลบ key</button>}
+              {data?.ai?.keys?.[provider] && <button className="btn" disabled={busy} onClick={() => act(async () => { await api('/api/keys', { provider, key: '' }); setSaved('ลบ key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>ลบ key</button>}
               {saved && <span className="chip ok" role="status">{saved}</span>}
             </div>
           </div>
           <div className="mute">ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด</div>
-        </section>}
+        </section>
       </div>
 
       {mapDraft && <section className="card">
@@ -524,13 +561,14 @@ export default function Page() {
           <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความส่งให้ผู้ใช้'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
         </div>}
         <div className="tblwrap"><table>
-          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>EA ส่งข้อมูลล่าสุด</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>EA ส่งข้อมูลล่าสุด</th><th>AI key ของเขา</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
                 <td>{u.login || <span className="mute">ยังไม่ผูก</span>}</td>
                 <td>{u.eaSeen ? new Date(u.eaSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
+                <td>{u.aiKey ? <span className="chip ok">ใส่แล้ว</span> : <span className="mute">ยังไม่ใส่</span>}</td>
                 <td>{u.lastSeen ? new Date(u.lastSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
                 <td><div className="row">
                   <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>รีเซ็ตรหัสเว็บ</button>
@@ -540,7 +578,7 @@ export default function Page() {
                 </div></td>
               </tr>
             ))}
-            {!users.length && <tr><td colSpan={5} className="mute">ยังไม่มีผู้ใช้</td></tr>}
+            {!users.length && <tr><td colSpan={6} className="mute">ยังไม่มีผู้ใช้</td></tr>}
           </tbody>
         </table></div>
       </section>}

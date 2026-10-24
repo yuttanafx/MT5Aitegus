@@ -3,6 +3,7 @@ import { eaAuth, pickAcct, who } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
 import { addCmd, ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { getAiConf } from '@/lib/aiconf';
 import { regimeFor, saveSymRow } from '@/lib/regime';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import type { Mkt } from '@/lib/types';
@@ -35,11 +36,12 @@ export async function POST(req: Request) {
   if (!p.success) return Response.json({ error: 'bad body' }, { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
   const settings = await getSettings();
+  const conf = await getAiConf(acct); // this account's own AI settings (interval, provider, key)
 
   // EA calls are throttled by the interval set in the dashboard (admin test runs are never throttled).
   if (fromEA) {
     const last = await getJSON<number>(ak('lastrun:' + ind.symbol, acct), 0);
-    const wait = last + settings.intervalMin * 60_000 - Date.now();
+    const wait = last + conf.intervalMin * 60_000 - Date.now();
     if (wait > 5_000) return Response.json({ skipped: true, nextInSec: Math.ceil(wait / 1000) });
     await setJSON(ak('lastrun:' + ind.symbol, acct), Date.now());
   }
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
       tv = { regime, confidence: 0.9, provider: null, model: 'tradingview', reason: `จาก TradingView (${t.ticker}, ${ind.tf}): ADX ${t.adx.toFixed(1)}, EMA20 ${t.ema20 >= t.ema50 ? 'สูงกว่า' : 'ต่ำกว่า'} EMA50` };
     }
   }
-  const d = tv ? tv : nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : fromEA ? await regimeFor(ind, settings.intervalMin) : await decide(ind);
+  const d = tv ? tv : nw.active ? { regime: 'news' as const, confidence: 1, reason: newsText(nw), provider: null as any, model: 'news-guard' } : fromEA ? await regimeFor(ind, conf.intervalMin, acct) : await decide(ind, acct);
 
   // Strategies for this regime (an empty list = do not trade in this regime).
   const ids = settings.map?.[d.regime] ?? DEFAULT_MAP[d.regime] ?? [];

@@ -4,7 +4,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
 import { REGIMES, type Ind } from './strategies';
-import { getSettings, getKeys, type Keys } from './store';
+import type { Keys } from './store';
+import { getAiConf } from './aiconf';
 import type { Settings } from './types';
 
 type P = Settings['provider'];
@@ -20,11 +21,12 @@ function modelFor(p: P, id: string, k: Keys) {
   return createAnthropic({ apiKey: k.anthropic })(id);
 }
 
-// Tries the selected provider first, then the other providers that have a key.
-async function withFallback<T>(fn: (m: any, p: P, id: string, k: Keys) => Promise<T>): Promise<T & { provider: P; model: string }> {
-  const [s, keys] = await Promise.all([getSettings(), getKeys()]);
+// Tries the account's selected provider first, then its other providers that have a key. A member's account only ever
+// uses that member's own keys (see aiconf.ts), so every member pays for their own tokens.
+async function withFallback<T>(fn: (m: any, p: P, id: string, k: Keys) => Promise<T>, acct = 'main'): Promise<T & { provider: P; model: string }> {
+  const s = await getAiConf(acct), keys = s.keys;
   const chain = [s.provider, ...ORDER.filter((p) => p !== s.provider)].filter((p) => !!keys[p]);
-  let last: any = new Error('ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
+  let last: any = new Error(s.own ? 'ยังไม่ได้ใส่ API key ของคุณ (ใส่ได้ในการ์ด "ผู้ให้บริการ AI")' : 'ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
   for (const p of chain) {
     const id = p === s.provider && s.model ? s.model : DEFAULT_MODEL[p];
     try { return { ...(await fn(modelFor(p, id, keys), p, id, keys)), provider: p, model: id } as any; } catch (e) { last = e; }
@@ -40,7 +42,7 @@ const Decision = z.object({
 
 // The AI only classifies the market regime. Which strategies run for that regime is decided by the
 // mapping in the dashboard, and entry conditions are checked by the server rules.
-export async function decide(ind: Ind) {
+export async function decide(ind: Ind, acct = 'main') {
   try {
     return await withFallback(async (model) => {
       const { object } = await generateObject({
@@ -48,13 +50,13 @@ export async function decide(ind: Ind) {
         prompt: `จัดสภาพตลาดจากข้อมูลอินดิเคเตอร์ให้เป็นหนึ่งในนี้\n- trend_up: แนวโน้มขาขึ้นชัด (ADX สูง, EMA20 > EMA50)\n- trend_down: แนวโน้มขาลงชัด (ADX สูง, EMA20 < EMA50)\n- range: ไซด์เวย์ (ADX ต่ำ, EMA แคบ/พันกัน)\n- volatile: ผันผวนผิดปกติ ไม่มีทิศทางชัด (ATR กว้างเมื่อเทียบราคา)\n- news: สัญญาณว่าอยู่ในช่วงข่าวแรง\nถ้าไม่แน่ใจให้ลดค่า confidence\n\nข้อมูล:\n${JSON.stringify(ind)}`,
       });
       return object;
-    });
+    }, acct);
   } catch (e: any) {
     return { regime: 'volatile' as const, confidence: 0, reason: `AI ใช้งานไม่ได้: ${String(e?.message ?? e).slice(0, 120)}`, provider: null as any, model: '' };
   }
 }
 
-export async function chat(message: string, context: string) {
+export async function chat(message: string, context: string, acct = 'main') {
   return withFallback(async (model) => {
     const { text } = await generateText({
       model, temperature: 0.3,
@@ -62,7 +64,7 @@ export async function chat(message: string, context: string) {
       prompt: message,
     });
     return { text };
-  });
+  }, acct);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -116,7 +118,7 @@ async function geminiSearch(key: string, id: string, system: string, message: st
   }
 }
 
-export async function macro(message: string, context: string, o: { tech?: boolean; news?: boolean } = {}) {
+export async function macro(message: string, context: string, o: { tech?: boolean; news?: boolean } = {}, acct = 'main') {
   return withFallback(async (_m, p, id, keys) => {
     if (p === 'google') {
       const g = await geminiSearch(keys.google!, id, macroSystem(context, true, o), message);
@@ -133,7 +135,7 @@ export async function macro(message: string, context: string, o: { tech?: boolea
     // Anthropic (installed SDK has no web-search tool): answer from the model's own knowledge and say so.
     const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false, o), prompt: message });
     return { text: text.trim() + NO_LIVE_NOTE, live: false };
-  });
+  }, acct);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -142,7 +144,7 @@ export async function macro(message: string, context: string, o: { tech?: boolea
 // ---------------------------------------------------------------------------------------------
 export const MARKET_RE = /วิเคราะห์(ตลาด|กราฟ|ทอง|ราคา)|สรุปตลาด|ภาพรวมตลาด|ทิศทาง(ตลาด|ราคา)|แนวโน้ม(ตลาด|ราคา)|ตลาด(ตอนนี้|เป็น(ยังไง|อย่างไร)|ไปทางไหน|ขึ้นหรือลง)|\bmarket (analysis|outlook|summary)\b/i;
 
-export async function analyze(message: string, context: string) {
+export async function analyze(message: string, context: string, acct = 'main') {
   return withFallback(async (model) => {
     const { text } = await generateText({
       model, temperature: 0.3,
@@ -156,5 +158,5 @@ export async function analyze(message: string, context: string) {
       prompt: message,
     });
     return { text };
-  });
+  }, acct);
 }
