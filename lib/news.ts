@@ -1,4 +1,4 @@
-import { getJSON, setJSON } from './store';
+import { every, getJSON, setJSON } from './store';
 import type { Settings } from './types';
 
 // ---------------------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ async function pull(url: string): Promise<NewsEvent[]> {
 }
 
 export async function getNews(now = Date.now()): Promise<NewsFeed> {
-  const c = await getJSON<Cache | null>('newscache', null);
+  const c = await getJSON<Cache | null>('newscache', null, 30_000);
   if (c && c.events.length && now - c.fetchedAt < FRESH) return { events: c.events, status: 'ok', fetchedAt: c.fetchedAt };
   const usable = (x: Cache | null) => !!x && x.events.length > 0 && now - x.fetchedAt < MAX_AGE;
   if (c && now - c.triedAt < RETRY) return { events: usable(c) ? c.events : [], status: usable(c) ? 'stale' : 'error', error: c.error, fetchedAt: c.fetchedAt }; // failed recently: do not hammer the feed
@@ -85,6 +85,7 @@ export async function newsFor(symbol: string, s: Settings, now = Date.now(), fee
 
 // Remember which symbols the EAs trade (for the dashboard's news card).
 export async function noteSymbol(sym: string) {
+  if (!every('sym:' + sym, 600_000)) return; // already noted recently by this instance
   const l = await getJSON<string[]>('symbols', []);
   if (!l.includes(sym)) await setJSON('symbols', [sym, ...l].slice(0, 8));
 }

@@ -14,7 +14,7 @@ type Stored = { provider?: P; model?: string; intervalMin?: number; keys?: Parti
 export async function getAiConf(acct = 'main'): Promise<AiConf> {
   const s = await getSettings();
   if (acct === 'main') return { provider: s.provider, model: s.model, intervalMin: s.intervalMin, keys: await getKeys(), own: false };
-  const c = await getJSON<Stored>(ak('aiconf', acct), {});
+  const c = await getJSON<Stored>(ak('aiconf', acct), {}, 10_000);
   const keys: Keys = {};
   for (const p of PROVIDERS) { const v = c.keys?.[p]; if (v) { const k = unseal(v); if (k) keys[p] = k; } }
   return { provider: c.provider ?? s.provider, model: c.model ?? '', intervalMin: c.intervalMin ?? s.intervalMin, keys, own: true };

@@ -4,6 +4,12 @@ export const dynamic = 'force-dynamic';
 
 // Simple brute-force guard: 8 wrong passwords per IP per 10 minutes.
 export async function POST(req: Request) {
+  try { return await handle(req); } catch (e: any) {
+    if (/max requests limit|max daily request limit|quota/i.test(String(e?.message))) return Response.json({ error: 'ฐานข้อมูล (Upstash Redis) ใช้คำสั่งเต็มโควตาแล้ว ผู้ดูแลต้องอัปเกรดแผนหรือรอรอบเดือนใหม่' }, { status: 503 });
+    throw e;
+  }
+}
+async function handle(req: Request) {
   const ip = (req.headers.get('x-forwarded-for') || 'local').split(',')[0].trim();
   const fk = 'fail:' + ip;
   const f = await getJSON<{ n: number; ts: number }>(fk, { n: 0, ts: 0 });

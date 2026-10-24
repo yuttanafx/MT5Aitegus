@@ -10,18 +10,46 @@ const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TO
 const redis = url && token ? new Redis({ url, token }) : null;
 const mem: Record<string, any> = ((globalThis as any).__hubmem ??= {});
 
-export async function getJSON<T>(k: string, d: T): Promise<T> {
-  if (redis) return ((await redis.get<T>(k)) ?? d) as T;
-  return (mem[k] as T) ?? d;
+// Redis commands are the scarce resource (Upstash bills / limits per command), so reads are cheap on purpose:
+//  - getJSON(k, d, ttlMs): optional short cache inside this server instance for data that rarely changes
+//    (settings, users, keys ...). A write through setJSON drops the cached copy at once on this instance; other
+//    warm instances may serve the old copy for at most ttlMs.
+//  - getMany(): one MGET for many keys instead of one GET each.
+//  - every(key, ms): per-instance throttle for bookkeeping writes (EA "last seen", chart candles ...).
+const memo = ((globalThis as any).__hubmemo ??= new Map<string, { v: any; exp: number }>()) as Map<string, { v: any; exp: number }>;
+const gate = ((globalThis as any).__hubgate ??= new Map<string, number>()) as Map<string, number>;
+const stat = ((globalThis as any).__hubcmds ??= { n: 0 }) as { n: number };
+export const redisCmds = () => stat.n; // commands issued by this server instance since it started
+export function every(key: string, ms: number): boolean {
+  const now = Date.now();
+  if (now - (gate.get(key) ?? 0) < ms) return false;
+  if (gate.size > 2000) gate.clear();
+  gate.set(key, now);
+  return true;
+}
+export async function getJSON<T>(k: string, d: T, ttlMs = 0): Promise<T> {
+  if (ttlMs) { const h = memo.get(k); if (h && h.exp > Date.now()) return structuredClone(h.v) as T; }
+  stat.n++;
+  const v = (redis ? ((await redis.get<T>(k)) ?? d) : ((mem[k] as T) ?? d)) as T;
+  if (ttlMs) { if (memo.size > 500) memo.clear(); memo.set(k, { v: structuredClone(v), exp: Date.now() + ttlMs }); }
+  return v;
 }
 export async function setJSON(k: string, v: any) {
+  stat.n++;
+  memo.delete(k);
   if (redis) await redis.set(k, v); else mem[k] = v;
+}
+export async function getMany<T = any>(keys: string[]): Promise<(T | null)[]> {
+  if (!keys.length) return [];
+  stat.n++;
+  if (redis) return ((await redis.mget<(T | null)[]>(...keys)) ?? []).map((x) => x ?? null);
+  return keys.map((k) => (mem[k] as T) ?? null);
 }
 
 export const defaultSettings = (): Settings => ({
   provider: (process.env.AI_PROVIDER as Settings['provider']) || 'anthropic', model: '', paused: false, intervalMin: 15, regimeSource: 'ai', holdSec: 15, newsOn: true, newsBefore: 30, newsAfter: 15, newsImpact: 'High', newsUntil: 0, map: DEFAULT_MAP, gridProfiles: DEFAULT_PROFILES, gridMap: DEFAULT_GRID_MAP,
 });
-export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {})) });
+export const getSettings = async () => ({ ...defaultSettings(), ...(await getJSON<Partial<Settings>>('settings', {}, 10_000)) });
 // Every trading account has its own queue, latest decision, throttle timers and voice flag.
 // 'main' = the admin's own account (EA_API_KEY) and keeps the original key names, so existing data keeps working.
 export const ak = (base: string, acct = 'main') => (acct === 'main' ? base : `${base}:${acct}`);
@@ -60,12 +88,12 @@ const ENV_KEY: Record<Settings['provider'], string | undefined> = {
   get openai() { return process.env.OPENAI_API_KEY; },
   get google() { return process.env.GOOGLE_GENERATIVE_AI_API_KEY; },
 };
-export const getStoredKeys = () => getJSON<Keys>('apikeys', {});
+export const getStoredKeys = () => getJSON<Keys>('apikeys', {}, 10_000);
 export async function getKeys(): Promise<Keys> {
   const saved = await getStoredKeys();
   return { anthropic: saved.anthropic || ENV_KEY.anthropic, openai: saved.openai || ENV_KEY.openai, google: saved.google || ENV_KEY.google };
 }
 
 import type { User } from './types';
-export const getUsers = () => getJSON<User[]>('users', []);
+export const getUsers = () => getJSON<User[]>('users', [], 10_000);
 export const saveUsers = (u: User[]) => setJSON('users', u);

@@ -35,9 +35,16 @@ export default function Page() {
   const [newName, setNewName] = useState('');
   const [issued, setIssued] = useState<{ name: string; password?: string; eaKey?: string; login?: string } | null>(null);
   const [newLogin, setNewLogin] = useState('');
+  const [fgOpen, setFgOpen] = useState(false); // login page: "forgot password" form
+  const [fgLogin, setFgLogin] = useState('');
+  const [fgKey, setFgKey] = useState('');
+  const [fgPw, setFgPw] = useState('');
+  const [fgBusy, setFgBusy] = useState(false);
+  const [fgCopied, setFgCopied] = useState(false);
   const [curPw, setCurPw] = useState('');
   const [myNewPw, setMyNewPw] = useState('');
   const [pwCopied, setPwCopied] = useState(false);
+  const firstLoad = useRef(true); // true until the first state reply of the current account arrives
   const resetting = useRef(false); // true for a few seconds after the member resets their own password (old-password requests may still be in flight)
   const [acct, setAcct] = useState('main'); // admin only: which trading account's data is shown
   const [copied, setCopied] = useState(false);
@@ -63,6 +70,7 @@ export default function Page() {
   const pipRef = useRef<Window | null>(null);
   const toggleMicRef = useRef<(from?: Window) => void>(() => {});
   const loadRef = useRef<() => void>(() => {});
+  const autoVoiceRef = useRef(false);
 
   const closeOrb = () => {
     const w = pipRef.current; pipRef.current = null;
@@ -93,7 +101,9 @@ export default function Page() {
       pipRef.current = w;
       w.addEventListener('pagehide', () => { if (pipRef.current === w) { pipRef.current = null; setOrb('off'); } });
       // the popup window is visible, so its timer is not throttled like the (hidden) dashboard tab
-      w.setInterval(() => loadRef.current(), 5000);
+      // (this timer is the only poller while the orb is open) every 5 s with voice alerts on, otherwise every 15 s to save Redis commands
+      let tick = 0;
+      w.setInterval(() => { tick++; if (autoVoiceRef.current || tick % 3 === 0) loadRef.current(); }, 5000);
       setOrb('pip');
     } catch { setOrb('page'); }                                      // blocked / no user gesture -> in-page orb
   };
@@ -120,13 +130,24 @@ export default function Page() {
     setTheme(t); document.documentElement.dataset.theme = t;
     try { localStorage.setItem('theme', t); } catch {}
   };
-  const logout = () => { closeOrb(); sessionStorage.removeItem('hubkey'); setKey(''); setData(null); setUsers([]); setIssued(null); lastSeen.current = null; };
-  const login = async () => {
+  const logout = () => { closeOrb(); sessionStorage.removeItem('hubkey'); setKey(''); setData(null); firstLoad.current = true; setUsers([]); setIssued(null); lastSeen.current = null; };
+  const loginWith = async (password: string) => {
     setLoginErr('');
-    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: draft }) });
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) { setLoginErr(j.error || 'เข้าสู่ระบบไม่สำเร็จ'); return; }
-    const pw = draft.trim(); sessionStorage.setItem('hubkey', pw); setKey(pw); setDraft('');
+    const pw = password.trim(); sessionStorage.setItem('hubkey', pw); setKey(pw); setDraft(''); setFgOpen(false); setFgPw(''); setFgKey(''); setFgLogin('');
+  };
+  const login = () => loginWith(draft);
+  // "Forgot password": MT5 account number + personal EA key -> a new random web password (shown once)
+  const forgot = async () => {
+    setLoginErr(''); setFgBusy(true);
+    try {
+      const r = await fetch('/api/forgot', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: fgLogin, eaKey: fgKey }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setLoginErr(j.error || 'รีเซ็ตรหัสผ่านไม่สำเร็จ'); else { setFgPw(j.password); setFgKey(''); setFgCopied(false); }
+    } catch { setLoginErr('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'); }
+    setFgBusy(false);
   };
   const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'สลับเป็นโหมดกลางวัน' : 'สลับเป็นโหมดกลางคืน'}>{theme === 'dark' ? '☀️ กลางวัน' : '🌙 กลางคืน'}</button>;
 
@@ -137,12 +158,23 @@ export default function Page() {
   }, [key, acct]);
 
   const load = useCallback(() => api('/api/state' + [autoVoice ? 'voice=1' : '', sel ? 'sym=' + encodeURIComponent(sel) : ''].filter(Boolean).map((x, i) => (i ? '&' : '?') + x).join('')).then((d) => {
+    const first = firstLoad.current; firstLoad.current = false; // form drafts are filled from the server only on the first load of an account
     setData(d); setErr('');
-    setProvider((p) => (data ? p : d.ai?.provider ?? d.settings.provider)); setModel((m) => (data ? m : d.ai?.model ?? d.settings.model ?? '')); setIv((v) => (data ? v : d.ai?.intervalMin ?? d.settings.intervalMin ?? 15)); setHold((v) => (data ? v : d.settings.holdSec ?? 15)); setMapDraft((m) => (data ? m : d.settings.map || {})); setGrid((g) => (data ? g : { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} }));
-  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') { if (!resetting.current) logout(); } else setErr(e.message); }), [api, data, autoVoice, sel]);  // eslint-disable-line react-hooks/exhaustive-deps
+    setProvider((p) => (first ? d.ai?.provider ?? d.settings.provider : p)); setModel((m) => (first ? d.ai?.model ?? d.settings.model ?? '' : m)); setIv((v) => (first ? d.ai?.intervalMin ?? d.settings.intervalMin ?? 15 : v)); setHold((v) => (first ? d.settings.holdSec ?? 15 : v)); setMapDraft((m) => (first ? d.settings.map || {} : m)); setGrid((g) => (first ? { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} } : g));
+  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') { if (!resetting.current) logout(); } else setErr(e.message); }), [api, autoVoice, sel]);  // `data` must NOT be a dependency: every reply is a new object, so load would change on every reply and the effect below would fetch again at once = an endless request loop
 
   loadRef.current = load;
-  useEffect(() => { if (!key) return; load(); const t = setInterval(() => { if (!pipRef.current) load(); }, 5000); return () => clearInterval(t); }, [key, load]);
+  autoVoiceRef.current = autoVoice;
+  // Polling: every 5 s while voice alerts need it, otherwise every 10 s; nothing while the tab is hidden (unless voice alerts or the floating orb are on).
+  // Each request costs Redis commands, so an idle background tab must not poll.
+  useEffect(() => {
+    if (!key) return;
+    load();
+    const t = setInterval(() => { if (pipRef.current) return; if (document.hidden && !autoVoice) return; load(); }, autoVoice ? 5000 : 10000);
+    const vis = () => { if (!document.hidden && !pipRef.current) load(); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', vis); };
+  }, [key, load, autoVoice]);
 
   const speak = (text: string) => {
     const done = () => { if (modeRef.current === 'speaking') setMode('idle'); };
@@ -283,6 +315,26 @@ export default function Page() {
           <input id="k" type="password" autoComplete="current-password" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') login(); }} />
           {loginErr && <div className="err" role="alert">{loginErr}</div>}
           <button className="btn main" onClick={login}>เข้าสู่ระบบ</button>
+          <button className="btn" aria-expanded={fgOpen} onClick={() => { setFgOpen((v) => !v); setLoginErr(''); setFgPw(''); }}>ลืมรหัสผ่าน?</button>
+          {fgOpen && (fgPw ? (
+            <div className="bubble ai" role="status">
+              <div className="mute">รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด) รหัสเดิมใช้ไม่ได้แล้ว</div>
+              <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{fgPw}</div>
+              <div className="row">
+                <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(fgPw); setFgCopied(true); } catch { setLoginErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); } }}>{fgCopied ? 'คัดลอกแล้ว' : 'คัดลอกรหัส'}</button>
+                <button className="btn main" onClick={() => loginWith(fgPw)}>เข้าสู่ระบบด้วยรหัสนี้</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
+              <div className="mute">ยืนยันตัวตนด้วยเลขบัญชี MT5 และ EA key ส่วนตัวของคุณ (ตัวเดียวกับที่ใส่ในช่อง ApiKey ของ EA) ระบบจะออกรหัสผ่านใหม่ที่สุ่มให้ ผู้ดูแลรีเซ็ตรหัสตัวเองไม่ได้ที่นี่ ถ้าไม่มี EA key แล้วให้ติดต่อผู้ดูแล</div>
+              <label className="sub" htmlFor="fgl">เลขบัญชี MT5</label>
+              <input id="fgl" inputMode="numeric" autoComplete="off" value={fgLogin} onChange={(e) => setFgLogin(e.target.value)} />
+              <label className="sub" htmlFor="fgk">EA key</label>
+              <input id="fgk" type="password" autoComplete="off" value={fgKey} onChange={(e) => setFgKey(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && fgLogin.trim() && fgKey.trim() && !fgBusy) forgot(); }} />
+              <button className="btn warn" disabled={fgBusy || !fgLogin.trim() || !fgKey.trim()} onClick={forgot}>รีเซ็ตรหัสผ่าน</button>
+            </div>
+          ))}
         </div>
       </main>
     );
@@ -295,7 +347,7 @@ export default function Page() {
         <div className="row">
           <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}{!isAdmin && data?.account?.login ? ` · MT5 ${data.account.login}` : ''}</span>
           {isAdmin && data?.accounts?.length > 1 && (
-            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setData(null); setAcct(e.target.value); }}>
+            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setData(null); firstLoad.current = true; setAcct(e.target.value); }}>
               {data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.login ? ` (${a.login})` : ''}</option>)}
             </select>
           )}

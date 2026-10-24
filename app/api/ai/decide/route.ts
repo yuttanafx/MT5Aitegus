@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eaAuth, pickAcct, who } from '@/lib/auth';
 import { decide } from '@/lib/ai';
 import { DEFAULT_MAP, STRATEGIES, evaluate, type Strategy } from '@/lib/strategies';
-import { addCmd, ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { addCmd, ak, every, getJSON, getSettings, setJSON } from '@/lib/store';
 import { getAiConf } from '@/lib/aiconf';
 import { regimeFor, saveSymRow } from '@/lib/regime';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const a = await eaAuth(req);
     if (!a.ok) return Response.json({ error: a.msg }, { status: a.status });
     acct = a.acct;
-    await setJSON(ak('seen', acct), { ts: Date.now() });
+    if (every('seen:' + acct, 120_000)) await setJSON(ak('seen', acct), { ts: Date.now() });
   } else acct = await pickAcct(req, me!);
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: 'bad body' }, { status: 400 });

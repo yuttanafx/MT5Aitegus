@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
 import { gridFor } from '@/lib/profiles';
-import { ak, getJSON, getSettings, setJSON } from '@/lib/store';
+import { ak, every, getJSON, getSettings, setJSON } from '@/lib/store';
 import { getAiConf } from '@/lib/aiconf';
 import { externalRegime, regimeFor, saveSymRow, symKey } from '@/lib/regime';
 import { regimeFromBars } from '@/lib/chart';
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   const a = await eaAuth(req);
   if (!a.ok) return new Response(a.msg, { status: a.status });
   const acct = a.acct;
-  await setJSON(ak('seen', acct), { ts: Date.now() });
+  if (every('seen:' + acct, 120_000)) await setJSON(ak('seen', acct), { ts: Date.now() }); // "EA last seen" only needs to be minutes-accurate
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return new Response('bad body', { status: 400 });
   const ind = { ...p.data, symbol: p.data.symbol.toUpperCase() };
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   const nw = await newsFor(ind.symbol, settings);   // cheap (cached calendar) and checked on every call, so the switch happens within one EA push
     // candles are always stored (the dashboard draws the chart from them), whatever the regime source is
   const bars = p.data.bars && p.data.bars.length >= 2 ? p.data.bars : null;
-  if (bars) await setJSON(`bars:${symKey(ind.symbol)}:${ind.tf}`, { ts: Date.now(), bars: bars.slice(-150) });
+  if (bars && every(`bars:${symKey(ind.symbol)}:${ind.tf}`, 120_000)) await setJSON(`bars:${symKey(ind.symbol)}:${ind.tf}`, { ts: Date.now(), bars: bars.slice(-150) });
   const useExt = settings.regimeSource === 'webhook' || settings.regimeSource === 'both';
   const ext = !useExt ? null : await externalRegime(ind.symbol, acct);   // regime sent by a TradingView alert
   const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
