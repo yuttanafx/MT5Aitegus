@@ -64,7 +64,7 @@ export async function chat(message: string, context: string, acct = 'main', dead
     const { text } = await generateText({
       model, temperature: 0.3,
       system: 'คุณคือ AI Strategist ของระบบเทรด MT5 ตอบภาษาไทย สั้น 1-3 ประโยค ไม่ใช้ markdown เพราะจะถูกอ่านออกเสียง ใช้ข้อมูลระบบด้านล่างเท่านั้น ห้ามแต่งตัวเลข และห้ามรับประกันกำไร\n' + context,
-      prompt: message, abortSignal: sig(deadline),
+      prompt: message, abortSignal: sig(deadline), maxRetries: 1,
     });
     return { text };
   }, acct, deadline);
@@ -96,8 +96,8 @@ function macroSystem(context: string, live: boolean, o: { tech?: boolean; news?:
 // Google: call the REST API directly with the google_search tool (the installed SDK only knows the
 // legacy tool name for non-"gemini-2" models, which newer Gemini versions may reject).
 async function geminiSearch(key: string, id: string, system: string, message: string, deadline: number) {
-  const call = async (search: boolean, ms: number) => {
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(id)}:generateContent`, {
+  const call = async (search: boolean, ms: number, model: string) => {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
@@ -114,13 +114,22 @@ async function geminiSearch(key: string, id: string, system: string, message: st
     if (!text) throw new Error('Gemini ไม่ส่งข้อความกลับมา (อาจถูกตัวกรองความปลอดภัยบล็อก)');
     return text;
   };
-  // live search gets most of the time; if it fails or is too slow, an answer without search still fits in what is left
   const left = () => deadline - Date.now();
-  try { return { text: await call(true, Math.max(6_000, Math.min(18_000, left() - 8_000))), live: true }; }
-  catch (e) {
-    if (left() < 5_000) throw e;
-    try { return { text: await call(false, Math.max(4_000, left() - 1_000)), live: false }; } catch { throw e; }
+  // Order of attempts (each one only if there is time left): 1) live search on the chosen model, 2) the chosen model without search,
+  // 3) cheaper fallback models without search (their quota is separate). The first one that answers wins, so a 429 on the
+  // search tool no longer ends in an error message.
+  const fallbacks = (process.env.GOOGLE_FALLBACK_MODELS ?? 'gemini-2.5-flash-lite,gemini-2.5-flash').split(',').map((x) => x.trim()).filter((x) => x && x !== id);
+  let first: any = null;
+  const plan: { search: boolean; model: string }[] = [{ search: true, model: id }, { search: false, model: id }, ...fallbacks.map((m) => ({ search: false, model: m }))];
+  for (const st of plan) {
+    const t = left();
+    if (t < 3_500) break;
+    // the live search gets most of the time but leaves room for the fallbacks; the others share what is left
+    const ms = st.search ? Math.max(5_000, Math.min(16_000, t - 8_000)) : Math.max(3_000, Math.min(10_000, t - 500));
+    try { return { text: await call(st.search, ms, st.model), live: st.search }; }
+    catch (e) { if (!first) first = e; }
   }
+  throw first ?? new Error('Gemini: no time left');
 }
 
 export async function macro(message: string, context: string, o: { tech?: boolean; news?: boolean } = {}, acct = 'main', deadline = Date.now() + 24_000) {
@@ -133,12 +142,12 @@ export async function macro(message: string, context: string, o: { tech?: boolea
       const { text } = await generateText({
         model: createOpenAI({ apiKey: keys.openai }).responses(id), temperature: 0.3,
         tools: { web_search_preview: createOpenAI({ apiKey: keys.openai }).tools.webSearchPreview({}) },
-        system: macroSystem(context, true, o), prompt: message, abortSignal: sig(deadline),
+        system: macroSystem(context, true, o), prompt: message, abortSignal: sig(deadline), maxRetries: 1,
       });
       return { text, live: true };
     }
     // Anthropic (installed SDK has no web-search tool): answer from the model's own knowledge and say so.
-    const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false, o), prompt: message, abortSignal: sig(deadline) });
+    const { text } = await generateText({ model: _m, temperature: 0.3, system: macroSystem(context, false, o), prompt: message, abortSignal: sig(deadline), maxRetries: 1 });
     return { text: text.trim() + NO_LIVE_NOTE, live: false };
   }, acct, deadline);
 }
@@ -160,7 +169,7 @@ export async function analyze(message: string, context: string, acct = 'main', d
         'ห้ามแต่งตัวเลข ห้ามรับประกันกำไร ห้ามสั่งซื้อขายตรง ๆ ให้พูดเป็นมุมมองและความเสี่ยง นี่ไม่เปลี่ยนคำสั่งหรือการตั้งค่าของระบบ',
         context,
       ].join('\n'),
-      prompt: message, abortSignal: sig(deadline),
+      prompt: message, abortSignal: sig(deadline), maxRetries: 1,
     });
     return { text };
   }, acct, deadline);

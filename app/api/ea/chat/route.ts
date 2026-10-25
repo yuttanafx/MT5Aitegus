@@ -12,7 +12,7 @@ export const maxDuration = 30;
 const GAP_MS = 5_000;
 const PER_DAY = Number(process.env.EA_CHAT_PER_DAY ?? 100);
 const MAX_CHARS = 230;      // the EA box shows 8 lines of ~30 characters
-const BUDGET_MS = 16_000;   // the EA waits at most ChatTimeoutMs (default 20 s); answer before that
+const BUDGET_MS = 24_000;   // the EA waits at most ChatTimeoutMs (set it to 30000); answer before that. The function limit is 30 s
 const text = (s: string, status = 200) => new Response(s, { status, headers: { 'content-type': 'text/plain; charset=utf-8' } });
 
 // MT5 cannot render markdown or line breaks: strip them and cut at a sentence end

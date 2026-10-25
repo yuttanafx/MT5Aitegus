@@ -16,6 +16,9 @@ export async function answerChat(message: string, acct: string, extra = '', budg
 
 async function run(message: string, acct: string, extra: string, deadline: number): Promise<ChatAnswer> {
   const detail = (e: any) => `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]`; // errors come from the caller's own key/provider
+  // quota / overload / slow answers are temporary: say so plainly instead of showing a provider error
+  const busy = (e: any) => /429|quota|rate.?limit|resource.?exhausted|timeout|timed out|aborted|overloaded|503|502|504|no time left/i.test(String(e?.message ?? e));
+  const wait = 'AI ติดโควต้าหรือตอบช้าชั่วคราว ลองถามใหม่อีกครั้งใน 1 นาที (ระบบเทรดและ EA ทำงานปกติ ไม่กระทบ)';
   const [cmds, decision, settings] = await Promise.all([getCmds(acct), getJSON<any>(ak('decision', acct), null), getSettings()]);
   let newsCtx = '';
   try { // upcoming events + guard status, so every answer (market, macro, news) can take the news into account
@@ -33,6 +36,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
       const r = await macro(message.slice(0, 500), ctx, { tech: MARKET_RE.test(message), news: NEWS_RE.test(message) }, acct, deadline); // "analyse the market + economy" = technical read first
       return { text: r.text, provider: r.provider, live: r.live };
     } catch (e) {
+      if (busy(e)) return { text: wait };
       return { text: 'วิเคราะห์เศรษฐกิจไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
     }
   }
@@ -41,6 +45,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
       const r = await analyze(message.slice(0, 500), ctx, acct, deadline);
       return { text: r.text, provider: r.provider };
     } catch (e) {
+      if (busy(e)) return { text: wait };
       return { text: 'วิเคราะห์ตลาดไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
     }
   }
@@ -48,6 +53,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
     const r = await chat(message.slice(0, 500), ctx, acct, deadline);
     return { text: r.text, provider: r.provider };
   } catch (e) {
+    if (busy(e)) return { text: wait };
     return { text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
   }
 }
