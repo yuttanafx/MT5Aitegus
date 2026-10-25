@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     if (c.holdUntil && now < c.holdUntil) continue; // still being announced on the dashboard
     if (want && symKey(c.symbol) !== symKey(want)) { if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (ไม่มี EA ของคู่นี้มารับภายใน 2 นาที)'; changed = true; } continue; }
     changed = true;
-    if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (EA ไม่ได้รับภายใน 2 นาที)'; continue; }
+    if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (EA ไม่ได้รับภายใน 2 นาที) เช็กว่า EA เปิดอยู่ และ AI_Url / AI_EAKey ถูกต้อง และ AI_WebOrders = true'; continue; }
     c.status = 'sent';
     out.push([c.id, c.symbol, c.side, c.lot, c.sl ?? 0, c.tp ?? 0].join('|'));
   }
