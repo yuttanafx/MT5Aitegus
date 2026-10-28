@@ -85,12 +85,22 @@ export async function POST(req: Request) {
   } else if (settings.regimeSource === 'webhook') { // webhook only: nothing valid yet -> EA keeps its current settings, no AI cost
     st = st ?? { regime: 'volatile', confidence: 0, reason: 'รอสัญญาณสภาพตลาดจาก webhook', hold: true, ts: Date.now() };
     if (st.extTs === undefined) st = { ...st, hold: true };
-  } else if (!st || st.newsId || st.ts + conf.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
+  } else if (!st || st.newsId || st.ts + conf.intervalMin * 60_000 - Date.now() <= 5_000 || (st.hold && Number(st.confidence) === 0 && !!bars)) { // last: a stale failed result (hold, 0%) is re-evaluated right away when candles exist // normal AI run (also right after a news window ends)
     const d = await regimeFor(ind, conf.intervalMin, acct);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);
-    st = { regime: d.regime, confidence: d.confidence, reason: d.reason, hold: d.confidence < minConf, ts: Date.now() };
-    await setJSON(key, st);
-    await writeDecision({ regime: d.regime, confidence: d.confidence, reason: d.reason, provider: (d as any).provider, model: (d as any).model, ts: st.ts });
+    // AI failed (quota / timeout / no key => confidence 0): fall back to the fixed chart rules instead of holding at VOLATILE 0%
+    const fb = d.confidence === 0 && bars ? regimeFromBars(bars as any, st?.src === 'aifb' ? st.regime : undefined) : null;
+    if (fb) {
+      const now = Date.now(), iv = conf.intervalMin * 60_000, retry = Math.min(5 * 60_000, iv); // ask the AI again in <= 5 min
+      const reason = `${d.reason} → ใช้กฎจากกราฟแทนชั่วคราว: ADX ${fb.adx.toFixed(1)}, EMA20 ${fb.ema20 >= fb.ema50 ? 'สูงกว่า' : 'ต่ำกว่า'} EMA50`;
+      st = { regime: fb.regime, confidence: 0.85, reason, hold: false, ts: now - iv + retry, src: 'aifb' };
+      await setJSON(key, st);
+      await writeDecision({ regime: fb.regime, confidence: 0.85, reason, model: 'chart-fallback', ts: now });
+    } else {
+      st = { regime: d.regime, confidence: d.confidence, reason: d.reason, hold: d.confidence < minConf, ts: Date.now() };
+      await setJSON(key, st);
+      await writeDecision({ regime: d.regime, confidence: d.confidence, reason: d.reason, provider: (d as any).provider, model: (d as any).model, ts: st.ts });
+    }
   }
 
   const { prof: f, scoped } = gridFor(settings, ind.symbol, st.regime);   // this pair's own profile set if it has one
