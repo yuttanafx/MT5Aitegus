@@ -85,7 +85,7 @@ export async function POST(req: Request) {
   } else if (settings.regimeSource === 'webhook') { // webhook only: nothing valid yet -> EA keeps its current settings, no AI cost
     st = st ?? { regime: 'volatile', confidence: 0, reason: 'รอสัญญาณสภาพตลาดจาก webhook', hold: true, ts: Date.now() };
     if (st.extTs === undefined) st = { ...st, hold: true };
-  } else if (!st || st.newsId || st.ts + conf.intervalMin * 60_000 - Date.now() <= 5_000) { // normal AI run (also right after a news window ends)
+  } else if (!st || st.newsId || st.ts + conf.intervalMin * 60_000 - Date.now() <= 5_000 || (st.hold && Number(st.confidence) === 0 && !!bars)) { // last: a stale failed result (hold, 0%) is re-evaluated right away when candles exist // normal AI run (also right after a news window ends)
     const d = await regimeFor(ind, conf.intervalMin, acct);
     const minConf = Number(process.env.MIN_CONFIDENCE ?? 0.6);
     // AI failed (quota / timeout / no key => confidence 0): fall back to the fixed chart rules instead of holding at VOLATILE 0%
