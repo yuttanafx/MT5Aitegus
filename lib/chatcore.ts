@@ -36,7 +36,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
       const r = await macro(message.slice(0, 500), ctx, { tech: MARKET_RE.test(message), news: NEWS_RE.test(message) }, acct, deadline); // "analyse the market + economy" = technical read first
       return { text: r.text, provider: r.provider, live: r.live };
     } catch (e) {
-      if (busy(e)) return { text: wait };
+      if (busy(e)) return { text: wait + detail(e) }; // keep the real provider error visible: "busy" also covers real quota / timeout problems that do not go away by waiting
       return { text: 'วิเคราะห์เศรษฐกิจไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
     }
   }
@@ -45,7 +45,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
       const r = await analyze(message.slice(0, 500), ctx, acct, deadline);
       return { text: r.text, provider: r.provider };
     } catch (e) {
-      if (busy(e)) return { text: wait };
+      if (busy(e)) return { text: wait + detail(e) }; // keep the real provider error visible: "busy" also covers real quota / timeout problems that do not go away by waiting
       return { text: 'วิเคราะห์ตลาดไม่สำเร็จ ตรวจสอบ API key และชื่อโมเดลในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
     }
   }
@@ -53,7 +53,7 @@ async function run(message: string, acct: string, extra: string, deadline: numbe
     const r = await chat(message.slice(0, 500), ctx, acct, deadline);
     return { text: r.text, provider: r.provider };
   } catch (e) {
-    if (busy(e)) return { text: wait };
+    if (busy(e)) return { text: wait + detail(e) }; // keep the real provider error visible: "busy" also covers real quota / timeout problems that do not go away by waiting
     return { text: 'เรียก AI ไม่สำเร็จ ตรวจสอบ API key ในหน้า Dashboard (ส่วนผู้ให้บริการ AI)' + detail(e) };
   }
 }
