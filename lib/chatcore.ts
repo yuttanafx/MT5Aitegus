@@ -15,7 +15,7 @@ export async function answerChat(message: string, acct: string, extra = '', budg
 }
 
 async function run(message: string, acct: string, extra: string, deadline: number): Promise<ChatAnswer> {
-  const detail = (e: any) => `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 220)}]`; // errors come from the caller's own key/provider
+  const detail = (e: any) => `\n[สาเหตุ: ${String(e?.message ?? e).slice(0, 420)}]`; // errors come from the caller's own key/provider
   // quota / overload / slow answers are temporary: say so plainly instead of showing a provider error
   const busy = (e: any) => /429|quota|rate.?limit|resource.?exhausted|timeout|timed out|aborted|overloaded|503|502|504|no time left/i.test(String(e?.message ?? e));
   const wait = 'AI ติดโควต้าหรือตอบช้าชั่วคราว ลองถามใหม่อีกครั้งใน 1 นาที (ระบบเทรดและ EA ทำงานปกติ ไม่กระทบ)';

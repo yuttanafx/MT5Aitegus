@@ -28,13 +28,16 @@ const sig = (deadline?: number) => (deadline ? AbortSignal.timeout(Math.max(3_00
 async function withFallback<T>(fn: (m: any, p: P, id: string, k: Keys) => Promise<T>, acct = 'main', deadline?: number): Promise<T & { provider: P; model: string }> {
   const s = await getAiConf(acct), keys = s.keys;
   const chain = [s.provider, ...ORDER.filter((p) => p !== s.provider)].filter((p) => !!keys[p]);
-  let last: any = new Error(s.own ? 'ยังไม่ได้ใส่ API key ของคุณ (ใส่ได้ในการ์ด "ผู้ให้บริการ AI")' : 'ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
+  const none = new Error(s.own ? 'ยังไม่ได้ใส่ API key ของคุณ (ใส่ได้ในการ์ด "ผู้ให้บริการ AI")' : 'ยังไม่ได้ใส่ API key ของผู้ให้บริการ AI (ใส่ได้ในหน้า Dashboard)');
+  const errs: string[] = []; // keep EVERY provider's error: showing only the last one hides why the provider you selected failed
   for (const p of chain) {
-    if (deadline && Date.now() > deadline - 4_000 && last) break;
+    if (deadline && Date.now() > deadline - 4_000 && errs.length) break;
     const id = p === s.provider && s.model ? s.model : DEFAULT_MODEL[p];
-    try { return { ...(await fn(modelFor(p, id, keys), p, id, keys)), provider: p, model: id } as any; } catch (e) { last = e; }
+    try { return { ...(await fn(modelFor(p, id, keys), p, id, keys)), provider: p, model: id } as any; }
+    catch (e: any) { errs.push(`${p}: ${String(e?.message ?? e).replace(/\s+/g, ' ').slice(0, 160)}`); }
   }
-  throw last;
+  if (!errs.length) throw none;
+  throw new Error(errs.join(' | '));
 }
 
 const Decision = z.object({
@@ -55,7 +58,7 @@ export async function decide(ind: Ind, acct = 'main') {
       return object;
     }, acct);
   } catch (e: any) {
-    return { regime: 'volatile' as const, confidence: 0, reason: `AI ใช้งานไม่ได้: ${String(e?.message ?? e).slice(0, 120)}`, provider: null as any, model: '' };
+    return { regime: 'volatile' as const, confidence: 0, reason: `AI ใช้งานไม่ได้: ${String(e?.message ?? e).slice(0, 360)}`, provider: null as any, model: '' };
   }
 }
 
