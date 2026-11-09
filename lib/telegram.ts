@@ -65,7 +65,7 @@ export async function notifyAcct(acct: string, text: string, html = false, evt?:
   } catch {}
 }
 
-const SRC: Record<string, string> = { webhook: 'TradingView', ai: 'AI', manual: 'ทำเอง' };
+const SRC: Record<string, string> = { webhook: 'TradingView', ai: 'AI', manual: 'ทำเอง', snipe: 'สไนเปอร์ (แนวรับ/ต้านจาก EA)' };
 const HEAD: Record<string, string> = { pending: '📥 รับคำสั่งเข้าคิวแล้ว', done: '✅ เปิดออเดอร์สำเร็จ', failed: '❌ ออเดอร์ล้มเหลว', blocked: '⛔ ออเดอร์ถูกบล็อก', sent: '📤 ส่งให้ EA แล้ว' };
 export const cmdText = (c: Cmd) =>
   `<b>${HEAD[c.status] ?? esc(c.status)}</b>\n${c.side === 'BUY' ? '🟢' : '🔴'} <b>${c.side}</b> ${esc(c.symbol)} · lot <b>${c.lot}</b>` +

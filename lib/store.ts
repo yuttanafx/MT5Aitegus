@@ -60,7 +60,7 @@ export const getCmds = (acct = 'main') => getJSON<Cmd[]>(ak('cmds', acct), []);
 export const saveCmds = (c: Cmd[], acct = 'main') => setJSON(ak('cmds', acct), c.slice(0, 200));
 
 // Adds a command to the queue after risk checks. Blocked commands are kept for the log.
-export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & { mkt?: Mkt; noHold?: boolean }, acct = 'main'): Promise<Cmd> {
+export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp' | 'source'> & Partial<Pick<Cmd, 'mode' | 'rr'>> & { mkt?: Mkt; noHold?: boolean }, acct = 'main'): Promise<Cmd> {
   const cmds = await getCmds(acct);
   const settings = await getSettings();
   let reason: string | null = settings.paused ? 'ระบบถูกหยุดชั่วคราว' : null;

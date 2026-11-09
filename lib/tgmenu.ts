@@ -2,12 +2,13 @@ import { getAiConf, saveAiConf } from './aiconf';
 import { answerChat } from './chatcore';
 import { ak, getCmds, getJSON, getSettings, saveCmds, setJSON } from './store';
 import { getLedger, getPosSnaps, periodText, posSummary, posText } from './positions';
+import { onSnipeButton, showSnipe } from './tgsnipe';
 import { esc, RTH, saveLinks, tgEdit, tgSend, type Kb, type NotifyEvt, type TgLink } from './telegram';
 
 // The button menus of the bot: main menu, trend analysis, EA settings, notifications, status, orders.
 // Every screen is edited IN PLACE (one message that changes as you tap) instead of piling up new messages.
 type Me = TgLink;
-export const MENU_KEYS = new Set(['mn', 'st', 'od', 'dy', 'dc', 'tr', 'ta', 'tm', 'ea', 'ei', 'es', 'en', 'eh', 'pa', 're', 'nt', 'nq']);
+export const MENU_KEYS = new Set(['mn', 'st', 'od', 'dy', 'dc', 'tr', 'ta', 'tm', 'ea', 'ei', 'es', 'en', 'eh', 'pa', 're', 'nt', 'nq', 'sn']);
 
 const GAP_MS = 3_000;
 const PER_DAY = Number(process.env.TELEGRAM_CHAT_PER_DAY ?? 100);
@@ -48,7 +49,7 @@ export async function showMain(chatId: string, me: Me, mid?: number) {
   const online = !!seen && Date.now() - seen.ts < 5 * 60_000;
   return put(chatId, mid,
     `📶 <b>MT5 Signal Hub</b>\n<b>ระบบ:</b> ${s.paused ? '⏸ หยุดชั่วคราว' : 'ทำงานปกติ'} · AI วิเคราะห์ทุก ${conf.intervalMin} นาที\n<b>EA:</b> ${online ? '🟢 ออนไลน์' : '🔴 ไม่พบสัญญาณ'}${seen ? ' · ' + ago(seen.ts) : ''}`,
-    [[B('📈 วิเคราะห์แนวโน้ม', 'tr'), B('⚙️ ตั้งค่า EA', 'ea')], [B('📊 สถานะ', 'st'), B('🔔 การแจ้งเตือน', 'nt')], [B('🟢 BUY', 'o:BUY'), B('🔴 SELL', 'o:SELL')], [B('📋 ออเดอร์ของ EA', 'od'), B('📅 สรุปยอด', 'dy')]]);
+    [[B('📈 วิเคราะห์แนวโน้ม', 'tr'), B('⚙️ ตั้งค่า EA', 'ea')], [B('📊 สถานะ', 'st'), B('🔔 การแจ้งเตือน', 'nt')], [B('🟢 BUY', 'o:BUY'), B('🔴 SELL', 'o:SELL')], [B('🎯 สไนเปอร์ แนวรับ/ต้าน', 'sn')], [B('📋 ออเดอร์ของ EA', 'od'), B('📅 สรุปยอด', 'dy')]]);
 }
 
 /* ---------- status / orders ---------- */
@@ -152,11 +153,13 @@ export async function showNotify(chatId: string, me: Me, mid?: number) {
 }
 
 /* ---------- button router ---------- */
-export async function onMenuButton(chatId: string, me: Me, mid: number, [k, x]: string[]) {
+export async function onMenuButton(chatId: string, me: Me, mid: number, args: string[]) {
+  const [k, x] = args;
   const admin = !isMember(me);
   const onlyAdmin = () => tgSend(chatId, 'คำสั่งนี้ใช้ได้เฉพาะผู้ดูแล');
   switch (k) {
     case 'mn': return showMain(chatId, me, mid);
+    case 'sn': return onSnipeButton(chatId, me, mid, args.slice(1));
     case 'st': return showStatus(chatId, me, mid);
     case 'od': return showOrders(chatId, me, mid);
     case 'dy': return showDaily(chatId, me, mid, x);
