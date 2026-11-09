@@ -3,6 +3,8 @@ import { answerChat } from './chatcore';
 import { ak, getCmds, getJSON, getSettings, saveCmds, setJSON } from './store';
 import { getLedger, getPosSnaps, periodText, posSummary, posText } from './positions';
 import { onSnipeButton, showSnipe } from './tgsnipe';
+import { listSymRows, symKey, type SymRow } from './regime';
+import { getSnipe } from './snipe';
 import { esc, RTH, saveLinks, tgEdit, tgSend, type Kb, type NotifyEvt, type TgLink } from './telegram';
 
 // The button menus of the bot: main menu, trend analysis, EA settings, notifications, status, orders.
@@ -100,29 +102,56 @@ export async function clearHistory(chatId: string, me: Me, mid: number, x?: stri
 }
 
 /* ---------- trend analysis ---------- */
-export async function showTrend(chatId: string, me: Me, mid?: number) {
-  const d = await getJSON<any>(ak('decision', me.acct), null);
-  const back = [B('🔄 รีเฟรช', 'tr'), B('‹ กลับ', 'mn')];
-  if (!d) return put(chatId, mid, `📈 <b>วิเคราะห์แนวโน้ม</b>\nยังไม่มีข้อมูล รอ EA ส่งข้อมูลรอบแรก (ตรวจว่า EA เปิดอยู่และตั้ง AI_Url / AI_EAKey ถูกต้อง)\n<i>อัปเดต ${hms()}</i>`, [back]);
-  const [ic, name] = rth(d.regime), i = d.ind ?? {};
-  return put(chatId, mid,
-    `${ic} <b>${esc(d.symbol)} ${esc(d.tf)} — ${name}</b>\nความมั่นใจ <b>${Math.round((d.confidence ?? 0) * 100)}%</b> · <b>${esc(d.strategy)}</b>${i.price ? ` · ราคา <b>${i.price}</b>` : ''}\n` +
-    (i.rsi !== undefined ? `RSI ${Number(i.rsi).toFixed(0)} · ADX ${Number(i.adx).toFixed(0)}\n` : '') +
-    `อัปเดต ${d.ts ? ago(d.ts) : '-'}${d.src === 'test' ? ' (ข้อมูลทดสอบ ไม่ใช่ตลาดจริง)' : ''}` +
-    (d.reason ? `\n<blockquote>${esc(String(d.reason).slice(0, 220))}</blockquote>` : '') + `\n<i>รีเฟรชล่าสุด ${hms()}</i>`,
-    [[B('🤖 วิเคราะห์เทคนิคด้วย AI', 'ta')], [B('🌐 เทคนิค + เศรษฐกิจ + ข่าว', 'tm')], back]);
+// One row per pair the EAs report. The latest AI decision is added when it is for a pair that has no row yet.
+async function trendRows(acct: string): Promise<SymRow[]> {
+  const [rows, d] = await Promise.all([listSymRows(acct), getJSON<any>(ak('decision', acct), null)]);
+  if (d?.symbol && !rows.some((r) => r.key === symKey(d.symbol)))
+    rows.push({ symbol: d.symbol, key: symKey(d.symbol), tf: d.tf ?? '', ts: d.ts ?? 0, regime: d.regime ?? '', confidence: d.confidence ?? 0, reason: d.reason ?? '', price: d.ind?.price });
+  return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
-async function runAI(chatId: string, me: Me, mid: number, mode: 'ta' | 'tm') {
+const validKey = (k?: string) => /^[A-Z0-9]{3,6}$/.test(k ?? '');
+
+// no key = list of pairs to choose from; with a key = that pair's trend
+export async function showTrend(chatId: string, me: Me, mid?: number, key?: string) {
+  const rows = await trendRows(me.acct);
+  const refresh = (k?: string) => B('🔄 รีเฟรช', k ? `tr:${k}` : 'tr');
+  if (!rows.length) return put(chatId, mid, `📈 <b>วิเคราะห์แนวโน้ม</b>\nยังไม่มีข้อมูล รอ EA ส่งข้อมูลรอบแรก (ตรวจว่า EA เปิดอยู่และตั้ง AI_Url / AI_EAKey ถูกต้อง)\n<i>อัปเดต ${hms()}</i>`, [[refresh(), B('‹ กลับ', 'mn')]]);
+  const pick = validKey(key) ? rows.find((r) => r.key === key) : undefined;
+  if (!pick) {
+    const line = (r: SymRow) => { const [ic, name] = rth(r.regime); return `${ic} ${esc(r.symbol)} ${esc(r.tf)} · ${name}${r.ts ? ' · ' + ago(r.ts) : ''}`; };
+    return put(chatId, mid, `📈 <b>วิเคราะห์แนวโน้ม</b>\nเลือกคู่เงินที่ต้องการดู\n${rows.map(line).join('\n')}\n<i>อัปเดต ${hms()}</i>`,
+      [...rows.map((r) => [B(`${rth(r.regime)[0]} ${r.symbol} ${r.tf}`.trim(), `tr:${r.key}`)]), [refresh(), B('‹ กลับ', 'mn')]]);
+  }
   const d = await getJSON<any>(ak('decision', me.acct), null);
-  if (!d?.symbol) return showTrend(chatId, me, mid);
+  const same = d && symKey(d.symbol ?? '') === pick.key ? d : null;   // RSI / ADX come with the latest decision, which is for one pair only
+  const i = same?.ind ?? {};
+  const [ic, name] = rth(pick.regime);
+  return put(chatId, mid,
+    `${ic} <b>${esc(pick.symbol)} ${esc(pick.tf)} — ${name}</b>\nความมั่นใจ <b>${Math.round((pick.confidence ?? 0) * 100)}%</b>${pick.profile ? ` · <b>${esc(pick.profile)}</b>` : ''}${pick.price ? ` · ราคา <b>${pick.price}</b>` : ''}\n` +
+    (i.rsi !== undefined ? `RSI ${Number(i.rsi).toFixed(0)} · ADX ${Number(i.adx).toFixed(0)}\n` : '') +
+    `อัปเดต ${pick.ts ? ago(pick.ts) : '-'}${same?.src === 'test' ? ' (ข้อมูลทดสอบ ไม่ใช่ตลาดจริง)' : ''}` +
+    (pick.reason ? `\n<blockquote>${esc(String(pick.reason).slice(0, 220))}</blockquote>` : '') + `\n<i>รีเฟรชล่าสุด ${hms()}</i>`,
+    [[B('🤖 วิเคราะห์เทคนิคด้วย AI', `ta:${pick.key}`)], [B('🌐 เทคนิค + เศรษฐกิจ + ข่าว', `tm:${pick.key}`)], [refresh(pick.key), B('‹ รายการคู่เงิน', 'tr')]]);
+}
+async function runAI(chatId: string, me: Me, mid: number, mode: 'ta' | 'tm', key?: string) {
+  const rows = await trendRows(me.acct);
+  const pick = validKey(key) ? rows.find((r) => r.key === key) : undefined;
+  if (!pick) return showTrend(chatId, me, mid);
   const wait = await gate(me.acct);
   if (wait) return tgSend(chatId, wait);
   const title = mode === 'ta' ? 'วิเคราะห์เทคนิคด้วย AI' : 'เทคนิค + เศรษฐกิจ + ข่าว';
-  await put(chatId, mid, `⏳ <b>กำลังวิเคราะห์...</b>\n${esc(d.symbol)} · ${title}\nใช้เวลาประมาณ 10–25 วินาที`);
+  await put(chatId, mid, `⏳ <b>กำลังวิเคราะห์...</b>\n${esc(pick.symbol)} · ${title}\nใช้เวลาประมาณ 10–25 วินาที`);
+  const [sn, d] = await Promise.all([getSnipe(me.acct, pick.key), getJSON<any>(ak('decision', me.acct), null)]);
+  const ind = d && symKey(d.symbol ?? '') === pick.key ? d.ind : null;
+  // the chat context only carries the latest decision (one pair), so the chosen pair's own numbers are passed in explicitly
+  const extra = `คู่เงินที่ผู้ใช้เลือกให้วิเคราะห์: ${pick.symbol} (ถ้า "การตัดสินใจล่าสุดของ AI" ด้านล่างเป็นคู่อื่น ให้ละเว้น ใช้ข้อมูลของคู่นี้แทน)\n` +
+    `แนวโน้มล่าสุดของ ${pick.symbol}: ${JSON.stringify({ regime: pick.regime, confidence: pick.confidence, tf: pick.tf, profile: pick.profile, reason: pick.reason, price: pick.price, ageMin: pick.ts ? Math.round((Date.now() - pick.ts) / 60_000) : null })}` +
+    (ind ? `\nอินดิเคเตอร์ ${pick.symbol}: ${JSON.stringify(ind)}` : '') +
+    (sn ? `\nแนวรับ/ต้านจาก EA (${sn.tf}): ราคา ${sn.bid} แนวรับ ${sn.sup || '-'} แนวต้าน ${sn.res || '-'}` : '');
   // the wording decides which analyst answers: "วิเคราะห์ตลาด" = technical read, adding economy/news words = macro analyst with the technical read first
-  const q = mode === 'ta' ? `วิเคราะห์ตลาด ${d.symbol} ตอนนี้ จากข้อมูลเทคนิคล่าสุดเท่านั้น สรุปสั้นๆ ไม่เกิน 8 บรรทัด` : `วิเคราะห์ตลาด ${d.symbol} ตอนนี้ ร่วมกับเศรษฐกิจและข่าวสำคัญ สรุปสั้นๆ ไม่เกิน 10 บรรทัด`;
-  const r = await answerChat(q, me.acct, '', 24_000);
-  return put(chatId, mid, `${rth(d.regime)[0]} <b>${esc(d.symbol)} · ${title}</b>\n\n${esc(plain(r.text) || 'ไม่มีคำตอบ').slice(0, 3500)}`, [[B('🔄 วิเคราะห์ใหม่', mode), B('‹ กลับ', 'tr')]]);
+  const q = mode === 'ta' ? `วิเคราะห์ตลาด ${pick.symbol} ตอนนี้ จากข้อมูลเทคนิคล่าสุดเท่านั้น สรุปสั้นๆ ไม่เกิน 8 บรรทัด` : `วิเคราะห์ตลาด ${pick.symbol} ตอนนี้ ร่วมกับเศรษฐกิจและข่าวสำคัญ สรุปสั้นๆ ไม่เกิน 10 บรรทัด`;
+  const r = await answerChat(q, me.acct, extra, 24_000);
+  return put(chatId, mid, `${rth(pick.regime)[0]} <b>${esc(pick.symbol)} · ${title}</b>\n\n${esc(plain(r.text) || 'ไม่มีคำตอบ').slice(0, 3500)}`, [[B('🔄 วิเคราะห์ใหม่', `${mode}:${pick.key}`), B('‹ กลับ', `tr:${pick.key}`)]]);
 }
 
 /* ---------- EA settings ---------- */
@@ -164,8 +193,8 @@ export async function onMenuButton(chatId: string, me: Me, mid: number, args: st
     case 'od': return showOrders(chatId, me, mid);
     case 'dy': return showDaily(chatId, me, mid, x);
     case 'dc': return clearHistory(chatId, me, mid, x);
-    case 'tr': return showTrend(chatId, me, mid);
-    case 'ta': case 'tm': return runAI(chatId, me, mid, k);
+    case 'tr': return showTrend(chatId, me, mid, x);
+    case 'ta': case 'tm': return runAI(chatId, me, mid, k, x);
     case 'ea': return showEA(chatId, me, mid);
     case 'ei': {
       const n = Number(x);
