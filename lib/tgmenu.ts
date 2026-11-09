@@ -5,6 +5,7 @@ import { getLedger, getPosSnaps, periodText, posSummary, posText } from './posit
 import { onSnipeButton, showSnipe } from './tgsnipe';
 import { listSymRows, symKey, type SymRow } from './regime';
 import { getSnipe } from './snipe';
+import { aiPayload, getScan, mergeScan } from './scan';
 import { esc, RTH, saveLinks, tgEdit, tgSend, type Kb, type NotifyEvt, type TgLink } from './telegram';
 
 // The button menus of the bot: main menu, trend analysis, EA settings, notifications, status, orders.
@@ -104,7 +105,8 @@ export async function clearHistory(chatId: string, me: Me, mid: number, x?: stri
 /* ---------- trend analysis ---------- */
 // One row per pair the EAs report. The latest AI decision is added when it is for a pair that has no row yet.
 async function trendRows(acct: string): Promise<SymRow[]> {
-  const [rows, d] = await Promise.all([listSymRows(acct), getJSON<any>(ak('decision', acct), null)]);
+  const [rows0, d, scan] = await Promise.all([listSymRows(acct), getJSON<any>(ak('decision', acct), null), getScan(acct)]);
+  const rows = mergeScan(rows0, scan);   // + every pair the EA's Market Scan sends
   if (d?.symbol && !rows.some((r) => r.key === symKey(d.symbol)))
     rows.push({ symbol: d.symbol, key: symKey(d.symbol), tf: d.tf ?? '', ts: d.ts ?? 0, regime: d.regime ?? '', confidence: d.confidence ?? 0, reason: d.reason ?? '', price: d.ind?.price });
   return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
@@ -124,7 +126,8 @@ export async function showTrend(chatId: string, me: Me, mid?: number, key?: stri
   }
   const d = await getJSON<any>(ak('decision', me.acct), null);
   const same = d && symKey(d.symbol ?? '') === pick.key ? d : null;   // RSI / ADX come with the latest decision, which is for one pair only
-  const i = same?.ind ?? {};
+  const sc = (await getScan(me.acct))?.items.find((x) => symKey(x.symbol) === pick.key);   // Market Scan numbers of this pair
+  const i = same?.ind ?? (sc ? { rsi: sc.rsi, adx: sc.adx } : {});
   const [ic, name] = rth(pick.regime);
   return put(chatId, mid,
     `${ic} <b>${esc(pick.symbol)} ${esc(pick.tf)} — ${name}</b>\nความมั่นใจ <b>${Math.round((pick.confidence ?? 0) * 100)}%</b>${pick.profile ? ` · <b>${esc(pick.profile)}</b>` : ''}${pick.price ? ` · ราคา <b>${pick.price}</b>` : ''}\n` +
@@ -143,10 +146,12 @@ async function runAI(chatId: string, me: Me, mid: number, mode: 'ta' | 'tm', key
   await put(chatId, mid, `⏳ <b>กำลังวิเคราะห์...</b>\n${esc(pick.symbol)} · ${title}\nใช้เวลาประมาณ 10–25 วินาที`);
   const [sn, d] = await Promise.all([getSnipe(me.acct, pick.key), getJSON<any>(ak('decision', me.acct), null)]);
   const ind = d && symKey(d.symbol ?? '') === pick.key ? d.ind : null;
+  const scanSnap = await getScan(me.acct), scanItem = scanSnap?.items.find((x) => symKey(x.symbol) === pick.key);
   // the chat context only carries the latest decision (one pair), so the chosen pair's own numbers are passed in explicitly
   const extra = `คู่เงินที่ผู้ใช้เลือกให้วิเคราะห์: ${pick.symbol} (ถ้า "การตัดสินใจล่าสุดของ AI" ด้านล่างเป็นคู่อื่น ให้ละเว้น ใช้ข้อมูลของคู่นี้แทน)\n` +
     `แนวโน้มล่าสุดของ ${pick.symbol}: ${JSON.stringify({ regime: pick.regime, confidence: pick.confidence, tf: pick.tf, profile: pick.profile, reason: pick.reason, price: pick.price, ageMin: pick.ts ? Math.round((Date.now() - pick.ts) / 60_000) : null })}` +
     (ind ? `\nอินดิเคเตอร์ ${pick.symbol}: ${JSON.stringify(ind)}` : '') +
+    (scanSnap && scanItem ? `\nข้อมูลกรองจาก Market Scan ของ EA (${scanSnap.tf}): ${JSON.stringify(aiPayload(scanItem, scanSnap.tf))}` : '') +
     (sn ? `\nแนวรับ/ต้านจาก EA (${sn.tf}): ราคา ${sn.bid} แนวรับ ${sn.sup || '-'} แนวต้าน ${sn.res || '-'}` : '');
   // the wording decides which analyst answers: "วิเคราะห์ตลาด" = technical read, adding economy/news words = macro analyst with the technical read first
   const q = mode === 'ta' ? `วิเคราะห์ตลาด ${pick.symbol} ตอนนี้ จากข้อมูลเทคนิคล่าสุดเท่านั้น สรุปสั้นๆ ไม่เกิน 8 บรรทัด` : `วิเคราะห์ตลาด ${pick.symbol} ตอนนี้ ร่วมกับเศรษฐกิจและข่าวสำคัญ สรุปสั้นๆ ไม่เกิน 10 บรรทัด`;
