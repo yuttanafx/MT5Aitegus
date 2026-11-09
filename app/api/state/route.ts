@@ -4,6 +4,7 @@ import { ak, every, getJSON, getMany, getSettings, getStoredKeys, getUsers, setJ
 import { newsView } from '@/lib/news';
 import { getAiConf } from '@/lib/aiconf';
 import { listSymRows, symKey } from '@/lib/regime';
+import { mergeScan, type ScanSnap } from '@/lib/scan';
 import { getAllowed, normSystems, seenKey, sysKey } from '@/lib/systems';
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +21,8 @@ async function handle(req: Request) {
   // a dashboard with voice alerts is listening (addCmd treats the flag as fresh for 20 s, so writing it every 10 s per instance is enough)
   if (new URL(req.url).searchParams.get('voice') === '1' && every('voice:' + acct, 10_000)) await setJSON(ak('voiceAt', acct), Date.now());
   // one MGET for everything that must be fresh; settings / keys / users come from the short in-instance cache
-  const [[cmdsRaw, decision, symsRaw, symIdx, sysRaw, seenSg, seenSr], settings, saved] = await Promise.all([
-    getMany<any>([ak('cmds', acct), ak('decision', acct), 'symbols', ak('symidx', acct), sysKey(acct), seenKey('sg', acct), seenKey('sr', acct)]), getSettings(), getStoredKeys(),
+  const [[cmdsRaw, decision, symsRaw, symIdx, sysRaw, seenSg, seenSr, scanRaw], settings, saved] = await Promise.all([
+    getMany<any>([ak('cmds', acct), ak('decision', acct), 'symbols', ak('symidx', acct), sysKey(acct), seenKey('sg', acct), seenKey('sr', acct), ak('scan', acct)]), getSettings(), getStoredKeys(),
   ]);
   const cmds: any[] = cmdsRaw ?? [];
   const syms: string[] = symsRaw ?? [];
@@ -37,7 +38,8 @@ async function handle(req: Request) {
   const ai = conf.own
     ? { own: true, provider: conf.provider, model: conf.model, intervalMin: conf.intervalMin, keys: Object.fromEntries(P3.map((p) => [p, !!conf.keys[p]])), keyHints: Object.fromEntries(P3.map((p) => [p, mask(conf.keys[p])])) }
     : { own: false, provider: conf.provider, model: conf.model, intervalMin: conf.intervalMin, keys, keyHints };
-  const symbols = await listSymRows(acct, symIdx ?? []);   // every pair this account's EA(s) have reported
+  const scan = (scanRaw ?? null) as ScanSnap | null;   // SR Breakout EA's Market Scan: every pair it watches, read in the same MGET as the rest
+  const symbols = mergeScan(await listSymRows(acct, symIdx ?? []), scan);   // every pair this account's EA(s) have reported (+ every scanned pair)
   const want = new URL(req.url).searchParams.get('sym');
   const selRow = symbols.find((r) => r.key === want) ?? symbols.find((r) => decision?.symbol && r.key === symKey(decision.symbol)) ?? symbols[0] ?? null;
   const cs = selRow ? { s: selRow.key, tf: selRow.tf } : decision?.symbol && decision?.tf ? { s: symKey(decision.symbol), tf: decision.tf } : null;
@@ -49,5 +51,5 @@ async function handle(req: Request) {
   const allowed = await getAllowed(acct);
   const sw = normSystems(sysRaw);
   const systems = { sg: sw.sg && allowed.sg, sr: sw.sr && allowed.sr, allowed, seen: { sg: seenSg?.ts ?? null, sr: seenSr?.ts ?? null }, srInfo: seenSr ? { symbol: seenSr.symbol ?? '', ver: seenSr.ver ?? '', eq: seenSr.eq ?? null, pos: seenSr.pos ?? null } : null };
-  return Response.json({ systems, ai, symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
+  return Response.json({ systems, ai, symbols, scanAi: scan?.ai ? { ts: scan.ai.ts, summary: scan.ai.summary ?? null, error: scan.ai.error ?? null, provider: scan.ai.provider ?? null, n: Object.keys(scan.ai.res).length } : null, scanTs: scan?.ts ?? null, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
 }
