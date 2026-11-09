@@ -9,7 +9,9 @@ export const dynamic = 'force-dynamic';
 // One user = one MT5 trading account = one EA key.
 //  password: the user's dashboard login          eaKey: goes into that account's EA (AI_EAKey), only works on `login`
 const Body = z.object({
-  action: z.enum(['create', 'reset', 'resetKey', 'bind', 'delete']),
+  action: z.enum(['create', 'reset', 'resetKey', 'bind', 'delete', 'systems']),
+  sg: z.boolean().optional(),
+  sr: z.boolean().optional(),
   name: z.string().trim().min(1).max(40).optional(),
   id: z.string().optional(),
   login: z.string().trim().regex(/^\d{4,12}$/, 'เลขบัญชี MT5 ต้องเป็นตัวเลข 4-12 หลัก').optional(),
@@ -20,7 +22,7 @@ const newEAKey = () => 'ea_' + randomBytes(18).toString('base64url');     // sho
 async function pub(users: User[]) {
   return Promise.all(users.map(async (u) => {
     const seen = await getJSON<{ ts: number } | null>(ak('seen', u.id), null);
-    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, aiKey: await hasOwnKey(u.id), createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts };
+    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, systems: { sg: u.systems?.sg !== false, sr: u.systems?.sr !== false }, aiKey: await hasOwnKey(u.id), createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts };
   }));
 }
 
@@ -49,6 +51,13 @@ export async function POST(req: Request) {
   }
   const u = users.find((x) => x.id === id);
   if (!u) return Response.json({ error: 'ไม่พบผู้ใช้' }, { status: 404 });
+  if (action === 'systems') { // which trading systems this member may use: SmartGold only, SR Breakout only, or both
+    const sg = p.data.sg !== false, sr = p.data.sr !== false;
+    if (!sg && !sr) return Response.json({ error: 'ต้องให้สิทธิ์อย่างน้อย 1 ระบบ' }, { status: 400 });
+    u.systems = { sg, sr };
+    await saveUsers(users);
+    return Response.json({ name: u.name, users: await pub(users) });
+  }
   if (action === 'reset') {
     const password = newPassword();
     u.hash = hashPw(password);

@@ -4,6 +4,7 @@ import { ak, every, getJSON, getMany, getSettings, getStoredKeys, getUsers, setJ
 import { newsView } from '@/lib/news';
 import { getAiConf } from '@/lib/aiconf';
 import { listSymRows, symKey } from '@/lib/regime';
+import { getAllowed, normSystems, seenKey, sysKey } from '@/lib/systems';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
@@ -19,8 +20,8 @@ async function handle(req: Request) {
   // a dashboard with voice alerts is listening (addCmd treats the flag as fresh for 20 s, so writing it every 10 s per instance is enough)
   if (new URL(req.url).searchParams.get('voice') === '1' && every('voice:' + acct, 10_000)) await setJSON(ak('voiceAt', acct), Date.now());
   // one MGET for everything that must be fresh; settings / keys / users come from the short in-instance cache
-  const [[cmdsRaw, decision, symsRaw, symIdx], settings, saved] = await Promise.all([
-    getMany<any>([ak('cmds', acct), ak('decision', acct), 'symbols', ak('symidx', acct)]), getSettings(), getStoredKeys(),
+  const [[cmdsRaw, decision, symsRaw, symIdx, sysRaw, seenSg, seenSr], settings, saved] = await Promise.all([
+    getMany<any>([ak('cmds', acct), ak('decision', acct), 'symbols', ak('symidx', acct), sysKey(acct), seenKey('sg', acct), seenKey('sr', acct)]), getSettings(), getStoredKeys(),
   ]);
   const cmds: any[] = cmdsRaw ?? [];
   const syms: string[] = symsRaw ?? [];
@@ -45,5 +46,8 @@ async function handle(req: Request) {
   const cur = acct === 'main' ? null : users.find((u) => u.id === acct);
   const account = { id: acct, name: cur ? cur.name : 'บัญชีหลัก', login: cur?.login ?? '' };
   const accounts = admin ? [{ id: 'main', name: 'บัญชีหลัก (Admin)', login: '' }, ...users.map((u) => ({ id: u.id, name: u.name, login: u.login ?? '' }))] : undefined;
-  return Response.json({ ai, symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
+  const allowed = await getAllowed(acct);
+  const sw = normSystems(sysRaw);
+  const systems = { sg: sw.sg && allowed.sg, sr: sw.sr && allowed.sr, allowed, seen: { sg: seenSg?.ts ?? null, sr: seenSr?.ts ?? null }, srInfo: seenSr ? { symbol: seenSr.symbol ?? '', ver: seenSr.ver ?? '', eq: seenSr.eq ?? null, pos: seenSr.pos ?? null } : null };
+  return Response.json({ systems, ai, symbols, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
 }

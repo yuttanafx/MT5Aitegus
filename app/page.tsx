@@ -382,6 +382,29 @@ export default function Page() {
         </div>
       </section>
 
+      {data?.systems && (() => {
+        const sy = data.systems, seen = sy.seen ?? {};
+        const mode = sy.sg && sy.sr ? 'both' : sy.sr ? 'sr' : 'sg';
+        const al = sy.allowed ?? { sg: true, sr: true };
+        const can = (m: string) => (m === 'sg' ? al.sg : m === 'sr' ? al.sr : al.sg && al.sr);
+        const set = (m: string) => act(() => api('/api/systems', { sg: m !== 'sr', sr: m !== 'sg' }));
+        const dot = (ts: number | null) => (ts && Date.now() - ts < 3 * 60_000 ? 'ออนไลน์ · ' + ago(ts) + ' ที่แล้ว' : ts ? 'เงียบ · ล่าสุด ' + ago(ts) + ' ที่แล้ว' : 'ยังไม่เคยเชื่อมต่อ');
+        const ok = (ts: number | null) => !!ts && Date.now() - ts < 3 * 60_000;
+        return (<section className="card" aria-label="เลือกระบบเทรด">
+          <h2>เลือกระบบเทรดที่ใช้</h2>
+          <div className="row" role="group" aria-label="เลือกระบบ">
+            {([['sg', 'SmartGold Grid'], ['sr', 'SR Breakout'], ['both', 'ใช้ทั้งสอง']] as const).map(([m, label]) => (
+              <button key={m} className={'btn ' + (mode === m ? 'main' : '')} aria-pressed={mode === m} disabled={busy || !can(m)} title={can(m) ? undefined : 'ผู้ดูแลไม่ได้ให้สิทธิ์ระบบนี้'} onClick={() => mode !== m && set(m)}>{label}</button>
+            ))}
+          </div>
+          <div style={{ overflowX: 'auto' }}><table><thead><tr><th>ระบบ</th><th>สถานะสวิตช์</th><th>การเชื่อมต่อ EA</th></tr></thead><tbody>
+            <tr><td><b>SmartGold Grid</b></td><td><span className={'chip ' + (sy.sg ? 'ok' : 'no')}>{!al.sg ? 'ไม่ได้รับสิทธิ์' : sy.sg ? 'เปิด' : 'ปิด'}</span></td><td><span className={'chip ' + (ok(seen.sg) ? 'ok' : '')}>{dot(seen.sg)}</span></td></tr>
+            <tr><td><b>SR Breakout</b></td><td><span className={'chip ' + (sy.sr ? 'ok' : 'no')}>{!al.sr ? 'ไม่ได้รับสิทธิ์' : sy.sr ? 'เปิด' : 'ปิด'}</span></td><td><span className={'chip ' + (ok(seen.sr) ? 'ok' : '')}>{dot(seen.sr)}</span>{sy.srInfo?.symbol ? ` ${sy.srInfo.symbol}` : ''}{sy.srInfo?.pos != null ? ` · ไม้ที่เปิดอยู่ ${sy.srInfo.pos}` : ''}</td></tr>
+          </tbody></table></div>
+          <div className="mute">ระบบที่ปิดจะหยุดเปิดออเดอร์ใหม่ ส่วนออเดอร์ที่เปิดอยู่แล้วยังถูกดูแลและปิดตามปกติ EA อ่านสวิตช์ทุกไม่กี่วินาที (SmartGold) หรือทุก 30 วินาที (SR Breakout) ต้องมีอย่างน้อย 1 ระบบเปิดอยู่</div>
+        </section>);
+      })()}
+
       {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={selRow?.symbol ?? d?.symbol ?? ''} tf={selRow?.tf ?? d?.tf ?? ''} regime={selRow?.regime ?? d?.regime} />}
       {!isAdmin && data && <section className="card">
         <h2>บัญชีของฉัน</h2>
@@ -613,12 +636,13 @@ export default function Page() {
           <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความส่งให้ผู้ใช้'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
         </div>}
         <div className="tblwrap"><table>
-          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>EA ส่งข้อมูลล่าสุด</th><th>AI key ของเขา</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>สิทธิ์ใช้ระบบ</th><th>EA ส่งข้อมูลล่าสุด</th><th>AI key ของเขา</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
                 <td>{u.login || <span className="mute">ยังไม่ผูก</span>}</td>
+                <td><select aria-label={`สิทธิ์ใช้ระบบของ ${u.name}`} disabled={busy} value={u.systems?.sg === false ? 'sr' : u.systems?.sr === false ? 'sg' : 'both'} onChange={(e) => userAct({ action: 'systems', id: u.id, sg: e.target.value !== 'sr', sr: e.target.value !== 'sg' })}><option value="both">ทั้งสองระบบ</option><option value="sg">SmartGold เท่านั้น</option><option value="sr">SR Breakout เท่านั้น</option></select></td>
                 <td>{u.eaSeen ? new Date(u.eaSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
                 <td>{u.aiKey ? <span className="chip ok">ใส่แล้ว</span> : <span className="mute">ยังไม่ใส่</span>}</td>
                 <td>{u.lastSeen ? new Date(u.lastSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
@@ -630,7 +654,7 @@ export default function Page() {
                 </div></td>
               </tr>
             ))}
-            {!users.length && <tr><td colSpan={6} className="mute">ยังไม่มีผู้ใช้</td></tr>}
+            {!users.length && <tr><td colSpan={7} className="mute">ยังไม่มีผู้ใช้</td></tr>}
           </tbody>
         </table></div>
       </section>}

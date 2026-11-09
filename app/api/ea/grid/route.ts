@@ -1,14 +1,19 @@
 import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
-import { gridFor } from '@/lib/profiles';
+import { gridForAcct } from '@/lib/profiles';
 import { ak, every, getJSON, getSettings, setJSON } from '@/lib/store';
 import { getAiConf } from '@/lib/aiconf';
+import { getSystems } from '@/lib/systems';
 import { externalRegime, regimeFor, saveSymRow, symKey } from '@/lib/regime';
 import { regimeFromBars } from '@/lib/chart';
 import { fetchTech, regimeFromTech } from '@/lib/tvscan';
 import { evKey, newsFor, newsText, noteSymbol } from '@/lib/news';
+import { notifyRegime, tgEnabled } from '@/lib/telegram';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
+
+// How often the candles shown on the dashboard chart are saved (minutes). Set BARS_SAVE_MIN in the Vercel environment variables; 0 = save on every EA push.
+const BARS_SAVE_MS = (Number.isFinite(Number(process.env.BARS_SAVE_MIN ?? '')) && (process.env.BARS_SAVE_MIN ?? '') !== '' ? Math.max(0, Number(process.env.BARS_SAVE_MIN)) : 2) * 60_000;
 
 const Body = z.object({
   symbol: z.string(), tf: z.string(), price: z.coerce.number(), adx: z.coerce.number(), rsi: z.coerce.number(),
@@ -35,17 +40,19 @@ export async function POST(req: Request) {
   const nw = await newsFor(ind.symbol, settings);   // cheap (cached calendar) and checked on every call, so the switch happens within one EA push
     // candles are always stored (the dashboard draws the chart from them), whatever the regime source is
   const bars = p.data.bars && p.data.bars.length >= 2 ? p.data.bars : null;
-  if (bars && every(`bars:${symKey(ind.symbol)}:${ind.tf}`, 120_000)) await setJSON(`bars:${symKey(ind.symbol)}:${ind.tf}`, { ts: Date.now(), bars: bars.slice(-150) });
+  if (bars && every(`bars:${symKey(ind.symbol)}:${ind.tf}`, BARS_SAVE_MS)) await setJSON(`bars:${symKey(ind.symbol)}:${ind.tf}`, { ts: Date.now(), bars: bars.slice(-150) });
   const useExt = settings.regimeSource === 'webhook' || settings.regimeSource === 'both';
   const ext = !useExt ? null : await externalRegime(ind.symbol, acct);   // regime sent by a TradingView alert
   const writeDecision = async (r: { regime: string; confidence: number; reason: string; provider?: any; model?: string; ts: number }) => {
-    const { prof } = gridFor(settings, ind.symbol, r.regime);
+    const { prof } = gridForAcct(settings, conf.grid, ind.symbol, r.regime);
+    const prev = tgEnabled() ? await getJSON<any>(ak('decision', acct), null) : null; // only to tell Telegram when the regime changes
     await setJSON(ak('decision', acct), {
       regime: r.regime, confidence: r.confidence, reason: r.reason, provider: r.provider ?? null, model: r.model ?? '',
       symbol: ind.symbol, tf: ind.tf, ts: r.ts, kind: 'grid', strategy_id: prof.id, strategy: prof.name,
       candidates: [prof.name], eval: null, pass: false, src: 'ea', newsGuard: r.regime === 'news' && !!nw.active,
       ind: { price: ind.price, adx: ind.adx, rsi: ind.rsi, atr: ind.atr, ema20: ind.ema20, ema50: ind.ema50 },
     });
+    if (prev && prev.symbol === ind.symbol && prev.regime && prev.regime !== r.regime) await notifyRegime(acct, { symbol: ind.symbol, tf: ind.tf, from: prev.regime, to: r.regime, confidence: r.confidence, strategy: prof.name, price: ind.price });
   };
   if (nw.active) {
     const id = evKey(nw.active);
@@ -103,11 +110,11 @@ export async function POST(req: Request) {
     }
   }
 
-  const { prof: f, scoped } = gridFor(settings, ind.symbol, st.regime);   // this pair's own profile set if it has one
-  await saveSymRow(acct, { symbol: ind.symbol, tf: ind.tf, ts: Date.now(), regime: st.regime, confidence: Number(st.confidence), reason: String(st.reason ?? ''), profile: f.name + (scoped ? ' (เฉพาะคู่)' : ''), hold: !!st.hold, price: ind.price });
+  const { prof: f, scoped, mine } = gridForAcct(settings, conf.grid, ind.symbol, st.regime);   // this pair's own profile set if it has one
+  await saveSymRow(acct, { symbol: ind.symbol, tf: ind.tf, ts: Date.now(), regime: st.regime, confidence: Number(st.confidence), reason: String(st.reason ?? ''), profile: f.name + (scoped ? ' (เฉพาะคู่)' : '') + (mine ? ' (ของฉัน)' : ''), hold: !!st.hold, price: ind.price });
   const sig = [f.id, +f.buy, +f.sell, f.lot, f.lotMult, f.step, f.stepW, f.stepA, f.max, f.tpN, f.tpO, f.recMult].join('|'); // EA re-applies only when this changes
   const lines = [
-    'ok=1', `hold=${st.hold ? 1 : 0}`, `regime=${st.regime}`, `conf=${Number(st.confidence).toFixed(2)}`, `profile=${f.id}`, `sig=${sig}`,
+    'ok=1', `on=${(await getSystems(acct)).sg ? 1 : 0}`, `hold=${st.hold ? 1 : 0}`, `regime=${st.regime}`, `conf=${Number(st.confidence).toFixed(2)}`, `profile=${f.id}`, `sig=${sig}`,
     `buy=${+f.buy}`, `sell=${+f.sell}`, `lot=${f.lot}`, `lotMult=${f.lotMult}`, `step=${f.step}`, `stepW=${f.stepW}`, `stepA=${f.stepA}`,
     `max=${f.max}`, `tpN=${f.tpN}`, `tpO=${f.tpO}`, `recMult=${f.recMult}`,
   ];
