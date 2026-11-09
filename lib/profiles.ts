@@ -28,3 +28,23 @@ export function gridFor(s: { gridProfiles: Record<string, Profile>; gridMap: Rec
   const prof = (o?.profiles ?? s.gridProfiles)[pid] ?? s.gridProfiles[pid] ?? DEFAULT_PROFILES.defensive;
   return { pid, prof, scoped: !!o };
 }
+
+// ---- per-member grid settings -------------------------------------------------------------------------------------------
+// A member can override single fields of a profile and re-map a regime to another profile, for HIS OWN account only.
+// Anything he does not override falls back to the shared (admin) settings. The admin caps what a member may choose (env vars).
+export type GridOverride = { profiles?: Record<string, Partial<Profile>>; map?: Record<string, string> };
+const envNum = (v: string | undefined, d: number) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+export const memberLimits = () => ({ lot: envNum(process.env.MEMBER_MAX_LOT, 1), max: envNum(process.env.MEMBER_MAX_ORDERS, 20), lotMult: envNum(process.env.MEMBER_MAX_LOTMULT, 3) });
+const clampMember = (p: Profile): Profile => { const L = memberLimits(); return { ...p, lot: Math.min(p.lot, L.lot), max: Math.min(p.max, L.max), lotMult: Math.min(p.lotMult, L.lotMult) }; };
+
+// Same as gridFor, plus the account's own overrides (applied on top of whichever profile set the pair resolves to).
+export function gridForAcct(s: Parameters<typeof gridFor>[0], ov: GridOverride | null | undefined, symbol: string, regime: string) {
+  const base = gridFor(s, symbol, regime);
+  if (!ov || (!ov.profiles && !ov.map)) return { ...base, mine: false };
+  const pid = ov.map?.[regime] && s.gridProfiles[ov.map[regime]] ? ov.map[regime] : base.pid;
+  const k = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  const src = (s.symGrid?.[k]?.profiles ?? s.gridProfiles)[pid] ?? s.gridProfiles[pid] ?? DEFAULT_PROFILES[pid] ?? DEFAULT_PROFILES.defensive;
+  const patch = ov.profiles?.[pid];
+  const prof = clampMember(patch ? { ...src, ...patch, id: src.id, name: src.name } : src);
+  return { pid, prof, scoped: base.scoped, mine: !!patch || pid !== base.pid };
+}
