@@ -16,7 +16,8 @@ export async function regimeFor(ind: Ind & { symbol: string; tf: string }, inter
 }
 
 // ---- One row per symbol an account's EA(s) report: the dashboard lists them so you can see every pair's trend and pick one ----
-export type SymRow = { symbol: string; key: string; tf: string; ts: number; regime: string; confidence: number; reason: string; profile?: string; hold?: boolean; price?: number };
+// src / eaRegime / adx ... are filled from the EA's Market Scan (lib/scan.ts): src = who named the regime shown ('ea' = the EA's own rules, 'ai' = AI analysis of the scan).
+export type SymRow = { symbol: string; key: string; tf: string; ts: number; regime: string; confidence: number; reason: string; profile?: string; hold?: boolean; price?: number; src?: 'ea' | 'ai'; eaRegime?: string; adx?: number; atrRatio?: number; sv?: number; up?: number; dn?: number };
 // Saving a row costs Redis commands and the EA reports every minute, so: skip the write when nothing visible changed
 // (same regime / profile / hold) for 2.5 minutes, and only look at the index when this instance has not seen the pair yet.
 const lastRow = ((globalThis as any).__hubrows ??= new Map<string, { sig: string; ts: number }>()) as Map<string, { sig: string; ts: number }>;

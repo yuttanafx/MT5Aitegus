@@ -62,6 +62,34 @@ export async function decide(ind: Ind, acct = 'main') {
   }
 }
 
+// One AI call for every pair the EA's Market Scan selected (cheaper than one call per pair). The EA's rule verdict is given
+// as a hint, but the AI judges from the raw numbers and may disagree. Throws on failure (the caller records the error text).
+const ManyDecision = z.object({
+  pairs: z.array(z.object({
+    symbol: z.string(),
+    regime: z.enum(REGIMES),
+    confidence: z.number().min(0).max(1),
+    reason: z.string().describe('เหตุผลสั้น ๆ ภาษาไทย ไม่เกิน 2 ประโยค อ้างตัวเลขจริงจากข้อมูล'),
+  })),
+  summary: z.string().describe('สรุปภาพรวมทุกคู่เงินภาษาไทย 2-3 ประโยค (คู่ไหนเทรนชัด คู่ไหนไซด์เวย์) ห้ามใช้ markdown'),
+});
+export async function decideMany(pairs: unknown[], acct = 'main', deadline?: number) {
+  return withFallback(async (model) => {
+    const { object } = await generateObject({
+      model, schema: ManyDecision, temperature: 0, abortSignal: sig(deadline), maxRetries: 1,
+      prompt: 'จัดสภาพตลาดของ "แต่ละคู่เงิน" จากข้อมูลอินดิเคเตอร์ให้เป็นหนึ่งในนี้\n' +
+        '- trend_up: แนวโน้มขาขึ้นชัด (ADX สูง, EMA เร็วเหนือ EMA ช้า, ราคาเหนือ EMA200, +DI > -DI, TF ใหญ่เห็นด้วย)\n' +
+        '- trend_down: แนวโน้มขาลงชัด (ตรงข้ามกับ trend_up)\n' +
+        '- range: ไซด์เวย์ (ADX ต่ำ, EMA พันกัน/ห่างกันน้อย, กรอบแคบ, ราคาตัด EMA ช้าไปมาบ่อย, ATR ต่ำกว่าปกติ)\n' +
+        '- volatile: ผันผวนผิดปกติ ไม่มีทิศทางชัด (ATR พุ่งเทียบค่าเฉลี่ยแต่ ADX/ทิศทางไม่ชัด)\n' +
+        '- news: ใช้เฉพาะเมื่อข้อมูลบ่งชี้ช่วงข่าวแรงจริง ๆ (ปกติไม่ต้องใช้)\n' +
+        'eaRuleVerdict คือผลจากกติกาโหวตของ EA ใช้เป็นข้อมูลประกอบ ถ้าเห็นต่างให้บอกเหตุผล ถ้าไม่แน่ใจให้ลดค่า confidence\n' +
+        'ตอบให้ครบทุกคู่เงินในรายการ ใช้ค่า symbol ตามที่ให้มาเป๊ะ ๆ\n\nข้อมูล:\n' + JSON.stringify(pairs),
+    });
+    return object;
+  }, acct, deadline);
+}
+
 export async function chat(message: string, context: string, acct = 'main', deadline?: number) {
   return withFallback(async (model) => {
     const { text } = await generateText({
