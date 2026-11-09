@@ -26,7 +26,7 @@ export async function GET(req: Request) {
     changed = true;
     if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (EA ไม่ได้รับภายใน 2 นาที) เช็กว่า EA เปิดอยู่ และ AI_Url / AI_EAKey ถูกต้อง และ AI_WebOrders = true'; expired.push(c); continue; }
     c.status = 'sent';
-    out.push([c.id, c.symbol, c.side, c.lot, c.sl ?? 0, c.tp ?? 0].join('|'));
+    out.push([c.id, c.symbol, c.side, c.lot, c.sl ?? 0, c.tp ?? 0, c.mode === 'snipe' ? 'snipe' : ''].join('|'));
   }
   if (changed) await saveCmds(cmds, a.acct);
   for (const c of expired) await notifyCmd(c, a.acct);

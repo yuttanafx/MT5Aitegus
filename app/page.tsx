@@ -610,7 +610,7 @@ export default function Page() {
               <tr key={c.id}>
                 <td>{new Date(c.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                 <td>{c.symbol}</td><td className={c.side === 'BUY' ? 'buy' : 'sell'}>{c.side}</td><td>{c.lot}</td>
-                <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? 'สั่งเอง' : 'Webhook'}</td>
+                <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? 'สั่งเอง' : c.source === 'snipe' ? 'สไนเปอร์' : 'Webhook'}</td>
                 <td>{STATUS[c.status]}{c.note ? <div className="mute">{c.note}</div> : null}</td>
               </tr>
             ))}
@@ -697,7 +697,7 @@ function FloatOrb({ mode, onTap, onClose }: { mode: Mode; onTap: () => void; onC
 function orderSpeech(c: any): string {
   const m = c.mkt, i = m?.ind, n = (v: any) => Number(Number(v).toFixed(2));
   const head = c.status === 'pending' ? 'ก่อนเปิดออเดอร์ ' : 'เปิดออเดอร์แล้ว ';
-  const order = `${c.side === 'BUY' ? 'ซื้อ' : 'ขาย'} ${c.symbol} ${c.lot} ล็อต${c.source === 'webhook' ? ' ตามสัญญาณ TradingView' : c.source === 'manual' ? ' ตามที่คุณสั่งเอง' : ' ตามการวิเคราะห์ของ AI'}`;
+  const order = `${c.side === 'BUY' ? 'ซื้อ' : 'ขาย'} ${c.symbol} ${c.lot} ล็อต${c.source === 'webhook' ? ' ตามสัญญาณ TradingView' : c.source === 'manual' ? ' ตามที่คุณสั่งเอง' : c.source === 'snipe' ? ' แบบสไนเปอร์ ตามแนวรับ/ต้านจาก EA' : ' ตามการวิเคราะห์ของ AI'}`;
   let mk = ' ยังไม่มีข้อมูลวิเคราะห์ตลาดล่าสุดของคู่นี้ประกอบสัญญาณ';
   if (m) {
     const rsi = i ? (i.rsi >= 70 ? ' RSI สูง เริ่มซื้อมากเกินไป' : i.rsi <= 30 ? ' RSI ต่ำ เริ่มขายมากเกินไป' : ` RSI ${Math.round(i.rsi)}`) : '';

@@ -5,6 +5,7 @@ import { addCmd, ak, getJSON, getUsers, setJSON } from '@/lib/store';
 import { esc, saveLinks, tgApi, tgSend, type Kb, type TgLink } from '@/lib/telegram';
 import { CFG_KEYS, cfgButton, cfgHome, cfgValue } from '@/lib/tgconfig';
 import { MENU_KEYS, gate, onMenuButton, plain, setPaused, showDaily, showMain, showOrders, showStatus } from '@/lib/tgmenu';
+import { showSnipe } from '@/lib/tgsnipe';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -21,6 +22,7 @@ const HELP = `พิมพ์ /menu เพื่อเปิดเมนูป�
 /status สถานะระบบและการตัดสินใจล่าสุดของ AI
 /orders ออเดอร์ของ EA (ไม้ที่เปิดอยู่ + ปิดล่าสุด)
 /daily สรุปยอดรายวัน
+/snipe สไนเปอร์: เลือกคู่เงินที่ EA ส่งแนวรับ/ต้านมา แล้วสั่ง BUY/SELL พร้อม SL/TP และ RR
 /buy [คู่เงิน] <lot> [sl] [tp] สั่งซื้อ เช่น /buy XAUUSD 0.01 หรือ /buy 0.01 (ใช้คู่ล่าสุดของ AI)
 /sell [คู่เงิน] <lot> [sl] [tp] สั่งขาย
 /confirm ยืนยันออเดอร์ที่รออยู่ (หมดอายุใน 2 นาที) /cancel ยกเลิก
@@ -155,6 +157,7 @@ async function onText(chatId: string, messageId: number, text: string) {
   if (cmd === 'status') return showStatus(chatId, me);
   if (cmd === 'orders') return showOrders(chatId, me);
   if (cmd === 'daily') return showDaily(chatId, me);
+  if (cmd === 'snipe') return showSnipe(chatId, me);
   if (cmd === 'pause' || cmd === 'resume') return tgSend(chatId, await setPaused(me, cmd === 'pause'));
   if (cmd === 'confirm' || cmd === 'cancel') return resolvePending(chatId, acct, cmd === 'confirm');
 
