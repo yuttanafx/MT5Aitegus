@@ -14,6 +14,7 @@ export async function GET(req: Request) {
   const sysLine = '#sys|' + ((s) => `${s.sg ? 1 : 0}|${s.sr ? 1 : 0}`)(await getSystems(a.acct));
   if ((await getSettings()).paused) return new Response(sysLine, { headers: { 'content-type': 'text/plain' } });
   const want = new URL(req.url).searchParams.get('symbol');   // optional: a chart only takes orders for its own symbol
+  const only = new URL(req.url).searchParams.get('only');     // optional: only=snipe = this EA takes sniper orders only (other commands stay for the EA that handles them)
   const cmds = await getCmds(a.acct);
   const now = Date.now();
   const out: string[] = [sysLine];
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
   for (const c of cmds) {
     if (c.status !== 'pending') continue;
     if (c.holdUntil && now < c.holdUntil) continue; // still being announced on the dashboard
+    if (only === 'snipe' && c.mode !== 'snipe') { if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (ไม่มี EA มารับภายใน 2 นาที)'; changed = true; expired.push(c); } continue; }   // not a sniper order: do not hand it to this EA, but still expire it like before
     if (want && symKey(c.symbol) !== symKey(want)) { if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (ไม่มี EA ของคู่นี้มารับภายใน 2 นาที)'; changed = true; expired.push(c); } continue; }
     changed = true;
     if (now - c.ts > 120_000) { c.status = 'failed'; c.note = 'หมดอายุ (EA ไม่ได้รับภายใน 2 นาที) เช็กว่า EA เปิดอยู่ และ AI_Url / AI_EAKey ถูกต้อง และ AI_WebOrders = true'; expired.push(c); continue; }
