@@ -12,6 +12,9 @@ const EA_VIEW = `https://drive.google.com/file/d/${DRIVE_ID}/view?usp=sharing`;
 const Icon = ({ d, size = 22 }: { d: string; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
 );
+const TG_URL = 'https://t.me/Hub_signal_propfirmth_bot';
+const LINE_URL = 'https://lin.ee/W3nixLK';
+const LINE_ICON = 'M21 11.5C21 7.4 16.97 4 12 4S3 7.4 3 11.5c0 3.6 3.2 6.6 7.5 7.4l-.3 2.1 4.3-2.6C18.7 17.5 21 14.8 21 11.5Z';
 const PLANE = 'M21.5 3.5 2.8 10.7c-.9.4-.9 1.2 0 1.5l4.6 1.4 1.8 5.5c.2.6.9.7 1.3.3l2.6-2.4 4.7 3.5c.7.5 1.4.2 1.6-.7l3.1-15.2c.2-1-.4-1.5-1-1.1ZM8 13.4l9.6-6-7.4 7.2-.3 3.2L8 13.4Z';
 
 function HeroStage() {
@@ -112,7 +115,7 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
     <div className="lp">
       <header className="lp-nav">
         <a className="lp-brand" href="#top"><span className="lp-mark"><i /><i /><i /></span>MT5 Signal Hub</a>
-        <div className="row"><LangBtn />{themeBtn}<a className="btn" href="#login">{t("เข้าสู่ระบบ","Log in")}</a></div>
+        <div className="row"><LangBtn />{themeBtn}<a className="btn lp-line-btn lp-nav-line" href={LINE_URL} target="_blank" rel="noopener noreferrer">{t("ติดต่อเรา","Contact us")}</a><a className="btn" href="#login">{t("เข้าสู่ระบบ","Log in")}</a></div>
       </header>
 
       <section className="lp-hero" id="top">
@@ -123,6 +126,7 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
             <div className="row">
               <a className="btn main lp-cta" href={EA_URL} rel="noopener"><Icon d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" size={20} />{t("ดาวน์โหลด EA","Download EA")}</a>
               <a className="btn lp-cta" href="#login">{t("เข้าสู่ระบบ","Log in")}</a>
+              <a className="btn lp-cta lp-tg-btn" href={TG_URL} target="_blank" rel="noopener noreferrer"><Icon d={PLANE} size={20} />{t("เปิดบอทเทเลแกรม","Open Telegram bot")}</a>
             </div>
             <div className="mute">{t("สำหรับ MetaTrader 5 · เชื่อมกับเว็บด้วยรหัสจากผู้ดูแล","For MetaTrader 5 · connect to the site with a code from your admin")}</div>
           </div>
@@ -161,6 +165,7 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
         <div className="lp-dl rv">
           <h2 id="get" className="lp-h2">{t("เริ่มใช้งาน","Get started")}</h2>
           <a className="btn main lp-cta" href={EA_URL} rel="noopener"><Icon d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14" size={20} />{t("ดาวน์โหลด EA","Download EA")}</a>
+          <a className="btn lp-cta lp-tg-btn" href={TG_URL} target="_blank" rel="noopener noreferrer"><Icon d={PLANE} size={20} />{t("เปิดบอทเทเลแกรม","Open Telegram bot")}</a>
           <a className="mute" href={EA_VIEW} target="_blank" rel="noopener noreferrer">{t("ดาวน์โหลดไม่ได้? เปิดไฟล์บน Google Drive","Can't download? Open the file on Google Drive")}</a>
           <ol className="lp-install">
             <li>{t("วางไฟล์ลงในโฟลเดอร์ ","Place the file in the folder ")}<code>MQL5/Experts</code>{t(" แล้วคอมไพล์ใน MetaEditor"," and compile it in MetaEditor")}</li>
@@ -169,6 +174,12 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
           </ol>
         </div>
         <div className="lp-login rv" style={{ transitionDelay: '150ms' }}>{children}</div>
+      </section>
+
+      <section className="lp-sec lp-contact rv" id="contact" aria-labelledby="contact-h">
+        <h2 id="contact-h" className="lp-h2">{t("ติดต่อเรา","Contact us")}</h2>
+        <p className="mute">{t("มีคำถามหรืออยากสมัครใช้งาน ทักไลน์ OA ได้เลย","Questions or want to sign up? Message us on LINE OA.")}</p>
+        <a className="btn lp-cta lp-line-btn" href={LINE_URL} target="_blank" rel="noopener noreferrer"><Icon d={LINE_ICON} size={20} />{t("ติดต่อเรา ผ่าน LINE OA","Contact us on LINE OA")}</a>
       </section>
 
       <footer className="lp-foot mute">{t("การเทรดมีความเสี่ยง ผลในอดีตและภาพตัวอย่างไม่รับประกันผลในอนาคต ควรทดสอบกับบัญชีทดลองก่อนใช้เงินจริง","Trading involves risk. Past results and demo visuals do not guarantee future results. Test on a demo account before using real money.")}</footer>
