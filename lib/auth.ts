@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'crypto';
-import { getUsers } from './store';
+import { every, getJSON, getUsers } from './store';
+import type { User } from './types';
 function eq(a: string | null | undefined, b: string | undefined) {
   if (!a || !b) return false;
   const x = Buffer.from(a), y = Buffer.from(b);
@@ -34,12 +35,15 @@ export async function pickAcct(r: Request, me: Who): Promise<string> {
 // the EA also sends x-account (its AccountInfoInteger(ACCOUNT_LOGIN)) and it must match.
 export type EAAuth = { ok: true; acct: string; login?: string; name: string } | { ok: false; status: number; msg: string };
 export async function eaAuth(r: Request): Promise<EAAuth> {
-  const key = r.headers.get('x-api-key');
-  if (!key) return { ok: false, status: 401, msg: 'unauthorized' };
+  const key = (r.headers.get('x-api-key') || '').trim();   // pasted keys often carry a trailing space / newline
+  if (!key) return { ok: false, status: 401, msg: 'unauthorized: no EA key was sent (the key field in the EA is empty)' };
   if (eq(key, process.env.EA_API_KEY)) return { ok: true, acct: 'main', name: 'Main' };
   const h = hashPw(key);
-  const u = (await getUsers()).find((x) => x.keyHash && eq(x.keyHash, h));
-  if (!u) return { ok: false, status: 401, msg: 'unauthorized' };
+  const find = (us: User[]) => us.find((x) => x.keyHash && eq(x.keyHash, h));
+  let u = find(await getUsers());
+  // A key issued a moment ago may be missing from this instance's 10 s cache: re-read once, uncached (throttled so bad keys cannot hammer Redis).
+  if (!u && every('eaauth-miss', 3000)) u = find(await getJSON<User[]>('users', [], 0));
+  if (!u) return { ok: false, status: 401, msg: 'unauthorized: EA key not recognised (check for spaces or typos, or the key was reset or replaced)' };
   const login = (r.headers.get('x-account') || '').replace(/\D/g, '');
   if (u.login && login !== u.login) return { ok: false, status: 403, msg: 'account mismatch: this EA key belongs to a different MT5 account' };
   return { ok: true, acct: u.id, login: u.login, name: u.name };
