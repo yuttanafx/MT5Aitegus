@@ -6,6 +6,7 @@ import { onSnipeButton, showSnipe } from './tgsnipe';
 import { listSymRows, symKey, type SymRow } from './regime';
 import { getSnipe } from './snipe';
 import { aiPayload, getScan, mergeScan } from './scan';
+import { removePair, removeStale } from './pairs';
 import { esc, RTH, saveLinks, tgEdit, tgSend, type Kb, type NotifyEvt, type TgLink } from './telegram';
 
 // The button menus of the bot: main menu, trend analysis, EA settings, notifications, status, orders.
@@ -122,7 +123,8 @@ export async function showTrend(chatId: string, me: Me, mid?: number, key?: stri
   if (!pick) {
     const line = (r: SymRow) => { const [ic, name] = rth(r.regime); return `${ic} ${esc(r.symbol)} ${esc(r.tf)} · ${name}${r.ts ? ' · ' + ago(r.ts) : ''}`; };
     return put(chatId, mid, `📈 <b>วิเคราะห์แนวโน้ม</b>\nเลือกคู่เงินที่ต้องการดู\n${rows.map(line).join('\n')}\n<i>อัปเดต ${hms()}</i>`,
-      [...rows.map((r) => [B(`${rth(r.regime)[0]} ${r.symbol} ${r.tf}`.trim(), `tr:${r.key}`)]), [refresh(), B('‹ กลับ', 'mn')]]);
+      [...rows.map((r) => [B(`${rth(r.regime)[0]} ${r.symbol} ${r.tf}`.trim(), `tr:${r.key}`)]),
+        ...(rows.some((r) => Date.now() - r.ts > 30 * 60_000) ? [[B('🧹 ลบคู่ที่เงียบเกิน 30 นาที', 'ts')]] : []), [refresh(), B('‹ กลับ', 'mn')]]);
   }
   const d = await getJSON<any>(ak('decision', me.acct), null);
   const same = d && symKey(d.symbol ?? '') === pick.key ? d : null;   // RSI / ADX come with the latest decision, which is for one pair only
@@ -134,7 +136,7 @@ export async function showTrend(chatId: string, me: Me, mid?: number, key?: stri
     (i.rsi !== undefined ? `RSI ${Number(i.rsi).toFixed(0)} · ADX ${Number(i.adx).toFixed(0)}\n` : '') +
     `อัปเดต ${pick.ts ? ago(pick.ts) : '-'}${same?.src === 'test' ? ' (ข้อมูลทดสอบ ไม่ใช่ตลาดจริง)' : ''}` +
     (pick.reason ? `\n<blockquote>${esc(String(pick.reason).slice(0, 220))}</blockquote>` : '') + `\n<i>รีเฟรชล่าสุด ${hms()}</i>`,
-    [[B('🤖 วิเคราะห์เทคนิคด้วย AI', `ta:${pick.key}`)], [B('🌐 เทคนิค + เศรษฐกิจ + ข่าว', `tm:${pick.key}`)], [refresh(pick.key), B('‹ รายการคู่เงิน', 'tr')]]);
+    [[B('🤖 วิเคราะห์เทคนิคด้วย AI', `ta:${pick.key}`)], [B('🌐 เทคนิค + เศรษฐกิจ + ข่าว', `tm:${pick.key}`)], [B('🎯 สไนเปอร์คู่นี้', `sn:v:${pick.key}`), B('🗑 ลบคู่นี้', `td:${pick.key}`)], [refresh(pick.key), B('‹ รายการคู่เงิน', 'tr')]]);
 }
 async function runAI(chatId: string, me: Me, mid: number, mode: 'ta' | 'tm', key?: string) {
   const rows = await trendRows(me.acct);
@@ -199,6 +201,8 @@ export async function onMenuButton(chatId: string, me: Me, mid: number, args: st
     case 'dy': return showDaily(chatId, me, mid, x);
     case 'dc': return clearHistory(chatId, me, mid, x);
     case 'tr': return showTrend(chatId, me, mid, x);
+    case 'td': if (validKey(x)) await removePair(me.acct, x); return showTrend(chatId, me, mid);   // delete one old pair (an EA that still reports it brings it back)
+    case 'ts': await removeStale(me.acct, 30 * 60_000); return showTrend(chatId, me, mid);
     case 'ta': case 'tm': return runAI(chatId, me, mid, k, x);
     case 'ea': return showEA(chatId, me, mid);
     case 'ei': {

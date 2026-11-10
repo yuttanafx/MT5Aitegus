@@ -42,6 +42,11 @@ export async function setJSON(k: string, v: any) {
   memo.delete(k);
   if (redis) await redis.set(k, v); else mem[k] = v;
 }
+export async function delKey(k: string) {
+  stat.n++;
+  memo.delete(k);
+  if (redis) await redis.del(k); else delete mem[k];
+}
 export async function getMany<T = any>(keys: string[]): Promise<(T | null)[]> {
   if (!keys.length) return [];
   stat.n++;

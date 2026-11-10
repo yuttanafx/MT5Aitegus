@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ak, getJSON, setJSON } from './store';
+import { ak, delKey, getJSON, setJSON } from './store';
 import { symKey, type SymRow } from './regime';
 import type { Ind } from './strategies';
 
@@ -10,6 +10,7 @@ import type { Ind } from './strategies';
 // together with the other keys it already fetches.
 // ---------------------------------------------------------------------------------------------
 const num = z.coerce.number().finite();
+const Plan = z.object({ e: num, sl: num, tp: z.array(num).length(3), risk: num.positive() });   // sniper plan of one side (same shape as /api/ea/sr)
 export const ScanItem = z.object({
   symbol: z.string().min(3).max(32),
   ai: z.boolean().optional(),                       // the EA's Scan_AISymbols chose this pair for AI analysis
@@ -22,6 +23,9 @@ export const ScanItem = z.object({
   emaFast: num.optional(), emaSlow: num.optional(), emaTrend: num.optional(), ema20: num, ema50: num, rsi: num,
   gap: num.optional(), rng: num.optional(), slope: num.optional(), chop: num.optional(),
   htf: num.optional(), sup: num.optional(), res: num.optional(),
+  // Sniper levels + SL/TP1-3 plans computed by the EA with its normal Sn_* rules (same RR as before), so every scanned pair is tradable from Telegram
+  snTf: z.string().max(8).optional(), snSup: num.optional(), snRes: num.optional(), rr: z.array(num.positive()).length(3).optional(), stopLevel: num.min(0).optional(),
+  buy: Plan.optional(), sell: Plan.optional(),
   note: z.string().max(500).optional(),
 });
 export const ScanBody = z.object({
@@ -43,6 +47,14 @@ export type ScanSnap = {
 
 export const getScan = (acct: string) => getJSON<ScanSnap | null>(ak('scan', acct), null);
 export const saveScan = (acct: string, s: ScanSnap) => setJSON(ak('scan', acct), s);
+// Take one pair out of the stored snapshot (it comes back with the EA's next push if the EA still scans it).
+export async function removeScanItem(acct: string, key: string) {
+  const snap = await getScan(acct);
+  if (!snap) return;
+  const items = snap.items.filter((it) => symKey(it.symbol) !== key);
+  if (items.length === snap.items.length) return;
+  if (!items.length) await delKey(ak('scan', acct)); else await saveScan(acct, { ...snap, items });
+}
 
 export const REGIME_TH: Record<string, string> = { trend_up: 'เทรนขึ้น', trend_down: 'เทรนลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' };
 

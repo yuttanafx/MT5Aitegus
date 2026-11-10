@@ -1,5 +1,6 @@
 import { addCmd, getJSON, setJSON } from './store';
 import { getSnipe, listSnipe, SNIPE_FRESH_MS, type Plan, type SnipeRow } from './snipe';
+import { removePair, removeStale } from './pairs';
 import { esc, tgEdit, tgSend, type BtnStyle, type Kb, type TgLink } from './telegram';
 
 // "Sniper" screens of the Telegram bot: pick a pair the EA reports, see its support / resistance and the SL + TP1-3 (with the RR of each),
@@ -37,6 +38,7 @@ export async function showSnipe(chatId: string, me: Me, mid?: number) {
   const back = [B('🔄 รีเฟรช', 'sn'), B('‹ เมนูหลัก', 'mn')];
   if (!rows.length) return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nยังไม่มีข้อมูลจาก EA\nต้องใช้ EA เวอร์ชันที่มีโมดูล SniperSR และเปิดทิ้งไว้ (EA ส่งทุกประมาณ 1 นาที)\n<i>อัปเดต ${hms()}</i>`, [back]);
   const kb: Kb = rows.map((r) => [B(`${fresh(r) ? '' : '💤 '}${r.symbol} · ${f(r, r.bid)}`, `sn:v:${r.key}`)]);
+  if (rows.some((r) => !fresh(r))) kb.push([B('🧹 ลบคู่ที่เงียบ', 'sn:z')]);
   return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nเลือกคู่เงินที่ EA ส่งมา\n${rows.map((r) => `${fresh(r) ? '🟢' : '💤'} ${esc(r.symbol)} ${esc(r.tf)} · ${ago(r.ts)}`).join('\n')}\n<i>💤 = EA เงียบเกิน 4 นาที สั่งออเดอร์ไม่ได้ · อัปเดต ${hms()}</i>`, [...kb, back]);
 }
 
@@ -57,7 +59,7 @@ export async function showSnipePair(chatId: string, me: Me, mid: number | undefi
   const kb: Kb = [];
   if (ok && r.buy) kb.push(r.buy.tp.map((t, i) => B(`🟢 BUY TP${i + 1} · 1:${rrOf(r.buy!, t).toFixed(1)}`, `sn:p:${r.key}:B:${i + 1}`, 'success')));
   if (ok && r.sell) kb.push(r.sell.tp.map((t, i) => B(`🔴 SELL TP${i + 1} · 1:${rrOf(r.sell!, t).toFixed(1)}`, `sn:p:${r.key}:S:${i + 1}`, 'danger')));
-  kb.push([B('🔄 รีเฟรช', `sn:v:${r.key}`), B('‹ รายการคู่เงิน', 'sn')]);
+  kb.push([B('🔄 รีเฟรช', `sn:v:${r.key}`), B('🗑 ลบคู่นี้', `sn:d:${r.key}`)], [B('‹ รายการคู่เงิน', 'sn')]);
   return put(chatId, mid, text, kb);
 }
 
@@ -111,8 +113,10 @@ export async function onSnipeButton(chatId: string, me: Me, mid: number, a: stri
   if (!x) return showSnipe(chatId, me, mid);
   if (x === 'x') { await setJSON(pk(chatId), null); return showSnipe(chatId, me, mid); }
   if (x === 'y') return send(chatId, mid, me);
+  if (x === 'z') { await removeStale(me.acct, 30 * 60_000); return showSnipe(chatId, me, mid); }
   if (!/^[A-Z0-9]{3,6}$/.test(key ?? '')) return showSnipe(chatId, me, mid);
   if (x === 'v') return showSnipePair(chatId, me, mid, key);
+  if (x === 'd') { await removePair(me.acct, key); return showSnipe(chatId, me, mid); }
   if (s !== 'B' && s !== 'S') return showSnipePair(chatId, me, mid, key);
   if (x === 'p') return pickLot(chatId, mid, key, s, Number(n), me);
   if (x === 'l') return confirmCard(chatId, mid, key, s, Number(n), Number(lot), me);

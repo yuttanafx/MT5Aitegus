@@ -1,5 +1,5 @@
 import { decide } from './ai';
-import { ak, getJSON, getMany, setJSON } from './store';
+import { ak, delKey, getJSON, getMany, setJSON } from './store';
 import type { Ind } from './strategies';
 
 type D = Awaited<ReturnType<typeof decide>>;
@@ -35,6 +35,14 @@ export async function saveSymRow(acct: string, r: Omit<SymRow, 'key'>) {
     if (!idx.includes(key)) await setJSON(ak('symidx', acct), [...idx, key].slice(-30));
     knownIdx.add(id);
   }
+}
+// Remove one pair from this account's list (e.g. after the EA's pair list changed). If an EA still reports it, it simply comes back.
+export async function removeSymRow(acct: string, key: string) {
+  const id = acct + ':' + key;
+  const idx = await getJSON<string[]>(ak('symidx', acct), []);
+  if (idx.includes(key)) await setJSON(ak('symidx', acct), idx.filter((k) => k !== key));
+  await delKey(ak('symrow:' + key, acct));
+  knownIdx.delete(id); lastRow.delete(id);
 }
 // `idx` can be passed in when the caller has already read it together with other keys (one MGET).
 export async function listSymRows(acct: string, idx?: string[]): Promise<SymRow[]> {
