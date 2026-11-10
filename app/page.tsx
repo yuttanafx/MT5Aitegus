@@ -431,8 +431,8 @@ export default function Page() {
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
       {symRows.length > 0 && <section className="card">
-        <div className="row" style={{ justifyContent: 'space-between' }}><h2>คู่เงินที่ EA ส่งมา ({symRows.length})</h2><span className="mute">กดแถวเพื่อดูกราฟและเลือกคู่สำหรับสั่งออเดอร์</span></div>
-        <div style={{ overflowX: 'auto' }}><table><thead><tr><th>คู่เงิน</th><th>TF</th><th>แนวโน้ม</th><th>ADX</th><th>ที่มา</th><th>โปรไฟล์ / กลยุทธ์</th><th>มั่นใจ</th><th>อัปเดต</th></tr></thead><tbody>
+        <div className="row" style={{ justifyContent: 'space-between' }}><h2>คู่เงินที่ EA ส่งมา ({symRows.length})</h2><span className="mute">กดแถวเพื่อดูกราฟและเลือกคู่สำหรับสั่งออเดอร์</span>{symRows.some((r) => Date.now() - r.ts > 30 * 60_000) && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/symbols', { stale: true, minutes: 30 }, 'DELETE'))}>ลบคู่ที่เงียบเกิน 30 นาที</button>}</div>
+        <div style={{ overflowX: 'auto' }}><table><thead><tr><th>คู่เงิน</th><th>TF</th><th>แนวโน้ม</th><th>ADX</th><th>ที่มา</th><th>โปรไฟล์ / กลยุทธ์</th><th>มั่นใจ</th><th>อัปเดต</th><th></th></tr></thead><tbody>
           {symRows.map((r) => {
             const stale = Date.now() - r.ts > 5 * 60_000, on = r.key === (sel || data?.selSym);
             return (<tr key={r.key} tabIndex={0} role="button" aria-pressed={on} style={{ cursor: 'pointer', background: on ? 'var(--line)' : undefined, opacity: stale ? 0.55 : 1 }}
@@ -441,7 +441,8 @@ export default function Page() {
               <td><span className={'chip ' + (r.regime === 'trend_up' ? 'ok' : r.regime === 'trend_down' ? 'no' : '')}>{r.regime === 'trend_up' ? '▲ ' : r.regime === 'trend_down' ? '▼ ' : ''}{REGIME[r.regime] ?? r.regime}</span></td>
               <td>{typeof r.adx === 'number' ? r.adx.toFixed(0) : '-'}</td><td>{r.src === 'ai' ? 'AI' : r.src === 'ea' ? 'กติกา EA' : '-'}</td>
               <td>{r.profile ?? '-'}{r.hold ? ' (ค้างค่าเดิม)' : ''}</td><td>{Math.round((r.confidence ?? 0) * 100)}%</td>
-              <td>{ago(r.ts)}{stale ? ' · EA เงียบ' : ''}</td></tr>);
+              <td>{ago(r.ts)}{stale ? ' · EA เงียบ' : ''}</td>
+              <td><button className="btn" disabled={busy} title="ลบคู่นี้ออกจากรายการ (ถ้า EA ยังส่งอยู่ จะกลับมาเอง)" onClick={(e) => { e.stopPropagation(); if (confirm(`ลบ ${r.symbol} ออกจากรายการ?\nถ้า EA ยังส่งคู่นี้อยู่ จะกลับมาในรอบถัดไป`)) act(() => api('/api/symbols', { key: r.key }, 'DELETE')); }}>ลบ</button></td></tr>);
           })}
         </tbody></table></div>
         {selRow && <div style={{ fontSize: 14, lineHeight: 1.6 }}><b>{selRow.symbol}</b>: {selRow.reason}</div>}
