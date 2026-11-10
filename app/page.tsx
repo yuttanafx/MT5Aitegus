@@ -2,15 +2,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import NewsCard from '@/components/NewsCard';
 import ChartCard from '@/components/ChartCard';
+import Landing from '@/components/Landing';
+import { LangBtn, tp, tx, useLang } from '@/lib/i18n';
 
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
-const STATUS: Record<string, string> = { pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' };
+const STATUS: Record<string, string> = tp({ pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' });
 const PROVIDERS = [['anthropic', 'Claude'], ['openai', 'GPT'], ['google', 'Gemini']];
-const REGIME: Record<string, string> = { trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' };
-const REGIME_HINT: Record<string, string> = {
+const REGIME: Record<string, string> = tp({ trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' });
+const REGIME_HINT: Record<string, string> = tp({
   trend_up: 'ADX สูง และ EMA20 อยู่เหนือ EMA50', trend_down: 'ADX สูง และ EMA20 อยู่ใต้ EMA50',
   range: 'ADX ต่ำ ราคาแกว่งในกรอบ', volatile: 'ผันผวนผิดปกติ ไม่มีทิศทางชัด', news: 'ช่วงข่าวแรง',
-};
+});
 const GRID_COLS: [string, string, number][] = [['lot', 'Lot เริ่ม', 0.01], ['lotMult', 'Lot x', 0.1], ['step', 'Step (pts)', 50], ['stepW', 'Step W', 0.1], ['stepA', 'Step A', 0.1], ['max', 'Max ไม้', 1], ['tpN', 'TP ปกติ $', 0.5], ['tpO', 'TP เก่า $', 0.5], ['recMult', 'Rec x', 0.1]];
 const INTERVALS = [1, 3, 5, 10, 15, 30, 60, 120];
 const HOLDS = [0, 10, 15, 20, 30];
@@ -30,6 +32,7 @@ export default function Page() {
   const [keyDraft, setKeyDraft] = useState('');
   const [saved, setSaved] = useState('');
   const [theme, setTheme] = useState('dark');
+  const { t } = useLang();
   const [loginErr, setLoginErr] = useState('');
   const [users, setUsers] = useState<any[]>([]);
   const [newName, setNewName] = useState('');
@@ -88,7 +91,7 @@ export default function Page() {
     const ov = doc.createElement('style');
     ov.textContent = 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg)}body{display:grid;place-items:center;cursor:pointer;user-select:none}.orb-wrap{width:100px;height:100px;margin:0}.orb-glow{inset:-26px}';
     doc.head.appendChild(ov);
-    doc.body.innerHTML = '<div id="pipOrb" class="orb-wrap idle" role="button" aria-label="คุยกับ AI"><div class="orb-glow"></div><div class="orb-wave"></div><div class="orb-wave w2"></div><div class="orb-ring"></div><div class="orb-core"></div></div>';
+    doc.body.innerHTML = '<div id="pipOrb" class="orb-wrap idle" role="button" aria-label={tx("คุยกับ AI")}><div class="orb-glow"></div><div class="orb-wave"></div><div class="orb-wave w2"></div><div class="orb-ring"></div><div class="orb-core"></div></div>';
     doc.body.addEventListener('click', () => toggleMicRef.current(w));
   };
   const openOrb = async () => {
@@ -112,7 +115,7 @@ export default function Page() {
     const w = pipRef.current; if (!w) return;
     const el = w.document.getElementById('pipOrb'); if (el) el.className = 'orb-wrap ' + mode;
     w.document.documentElement.dataset.theme = theme;
-    w.document.title = mode === 'listening' ? 'กำลังฟัง…' : mode === 'speaking' ? 'กำลังตอบ…' : 'AI Orb';
+    w.document.title = mode === 'listening' ? tx('กำลังฟัง…') : mode === 'speaking' ? tx('กำลังตอบ…') : 'AI Orb';
   }, [mode, theme, orb]);
 
   useEffect(() => {
@@ -126,16 +129,17 @@ export default function Page() {
   }, []);
 
   const toggleTheme = () => {
-    const t = theme === 'dark' ? 'light' : 'dark';
-    setTheme(t); document.documentElement.dataset.theme = t;
-    try { localStorage.setItem('theme', t); } catch {}
+    const nt = theme === 'dark' ? 'light' : 'dark';
+    const root = document.documentElement; root.classList.add('tt'); setTimeout(() => root.classList.remove('tt'), 500);   // smooth colour fade
+    setTheme(nt); root.dataset.theme = nt;
+    try { localStorage.setItem('theme', nt); } catch {}
   };
   const logout = () => { closeOrb(); sessionStorage.removeItem('hubkey'); setKey(''); setData(null); firstLoad.current = true; setUsers([]); setIssued(null); lastSeen.current = null; };
   const loginWith = async (password: string) => {
     setLoginErr('');
     const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password }) });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { setLoginErr(j.error || 'เข้าสู่ระบบไม่สำเร็จ'); return; }
+    if (!r.ok) { setLoginErr(j.error || tx('เข้าสู่ระบบไม่สำเร็จ')); return; }
     const pw = password.trim(); sessionStorage.setItem('hubkey', pw); setKey(pw); setDraft(''); setFgOpen(false); setFgPw(''); setFgKey(''); setFgLogin('');
   };
   const login = () => loginWith(draft);
@@ -145,15 +149,15 @@ export default function Page() {
     try {
       const r = await fetch('/api/forgot', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ login: fgLogin, eaKey: fgKey }) });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) setLoginErr(j.error || 'รีเซ็ตรหัสผ่านไม่สำเร็จ'); else { setFgPw(j.password); setFgKey(''); setFgCopied(false); }
-    } catch { setLoginErr('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'); }
+      if (!r.ok) setLoginErr(j.error || tx('รีเซ็ตรหัสผ่านไม่สำเร็จ')); else { setFgPw(j.password); setFgKey(''); setFgCopied(false); }
+    } catch { setLoginErr(tx('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้')); }
     setFgBusy(false);
   };
-  const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? 'สลับเป็นโหมดกลางวัน' : 'สลับเป็นโหมดกลางคืน'}>{theme === 'dark' ? '☀️ กลางวัน' : '🌙 กลางคืน'}</button>;
+  const ThemeBtn = () => <button className="btn" onClick={toggleTheme} aria-label={theme === 'dark' ? t('สลับเป็นโหมดกลางวัน', 'Switch to day mode') : t('สลับเป็นโหมดกลางคืน', 'Switch to night mode')}>{theme === 'dark' ? t('☀️ กลางวัน', '☀️ Day') : t('🌙 กลางคืน', '🌙 Night')}</button>;
 
   const api = useCallback(async (path: string, body?: any, method?: string) => {
     const r = await fetch(path, { method: method ?? (body ? 'POST' : 'GET'), headers: { 'content-type': 'application/json', 'x-admin-key': key, ...(acct !== 'main' ? { 'x-acct': acct } : {}) }, body: body ? JSON.stringify(body) : undefined });
-    if (!r.ok) throw new Error(r.status === 401 ? 'รหัสผ่านไม่ถูกต้อง' : (await r.json().catch(() => null))?.error ?? 'เกิดข้อผิดพลาด ' + r.status);
+    if (!r.ok) throw new Error(r.status === 401 ? tx('รหัสผ่านไม่ถูกต้อง') : (await r.json().catch(() => null))?.error ?? 'เกิดข้อผิดพลาด ' + r.status);
     return r.json();
   }, [key, acct]);
 
@@ -161,7 +165,7 @@ export default function Page() {
     const first = firstLoad.current; firstLoad.current = false; // form drafts are filled from the server only on the first load of an account
     setData(d); setErr('');
     setProvider((p) => (first ? d.ai?.provider ?? d.settings.provider : p)); setModel((m) => (first ? d.ai?.model ?? d.settings.model ?? '' : m)); setIv((v) => (first ? d.ai?.intervalMin ?? d.settings.intervalMin ?? 15 : v)); setHold((v) => (first ? d.settings.holdSec ?? 15 : v)); setMapDraft((m) => (first ? d.settings.map || {} : m)); setGrid((g) => (first ? { profiles: d.settings.gridProfiles || {}, map: d.settings.gridMap || {} } : g));
-  }).catch((e) => { if (e.message === 'รหัสผ่านไม่ถูกต้อง') { if (!resetting.current) logout(); } else setErr(e.message); }), [api, autoVoice, sel]);  // `data` must NOT be a dependency: every reply is a new object, so load would change on every reply and the effect below would fetch again at once = an endless request loop
+  }).catch((e) => { if (e.message === tx('รหัสผ่านไม่ถูกต้อง')) { if (!resetting.current) logout(); } else setErr(e.message); }), [api, autoVoice, sel]);  // `data` must NOT be a dependency: every reply is a new object, so load would change on every reply and the effect below would fetch again at once = an endless request loop
 
   loadRef.current = load;
   autoVoiceRef.current = autoVoice;
@@ -291,7 +295,7 @@ export default function Page() {
   const gScopes = Array.from(new Set([...symRows.map((r) => r.key), ...Object.keys(symGrid)]));
   const gName = (k: string) => symRows.find((r) => r.key === k)?.symbol ?? k;
   const pickScope = (sc: string) => { const s = data?.settings; const o = sc ? symGrid[sc] : null; setGrid({ profiles: JSON.parse(JSON.stringify(o?.profiles ?? s.gridProfiles)), map: { ...(o?.map ?? s.gridMap) } }); setGscope(sc); };
-  const ago = (ts: number) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 90 ? s + ' วิ' : s < 5400 ? Math.round(s / 60) + ' นาที' : Math.round(s / 3600) + ' ชม.'; };
+  const ago = (ts: number) => { const s = Math.max(0, Math.round((Date.now() - ts) / 1000)); return s < 90 ? s + ' ' + tx('วิ') : s < 5400 ? Math.round(s / 60) + ' ' + tx('นาที') : Math.round(s / 3600) + ' ' + tx('ชม.'); };
   const isAdmin = data?.me?.role === 'admin';
   useEffect(() => { if (isAdmin) api('/api/users').then((r) => setUsers(r.users)).catch(() => {}); }, [isAdmin, api]);
   const userAct = (body: any) => act(async () => {
@@ -302,61 +306,62 @@ export default function Page() {
   });
   const copyIssued = async () => {
     if (!issued) return;
-    try { await navigator.clipboard.writeText(['MT5 Signal Hub', `ลิงก์เว็บ: ${location.origin}`, issued.password && `รหัสผ่านเข้าเว็บ: ${issued.password}`, issued.eaKey && '--- ตั้งค่าใน EA ---', issued.eaKey && `AI_Url: ${location.origin}`, issued.eaKey && `AI_EAKey: ${issued.eaKey}`, issued.login && `ใช้ได้กับบัญชี MT5 เลข ${issued.login} เท่านั้น`].filter(Boolean).join('\n')); setCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); }
+    try { await navigator.clipboard.writeText(['MT5 Signal Hub', `ลิงก์เว็บ: ${location.origin}`, issued.password && `รหัสผ่านเข้าเว็บ: ${issued.password}`, issued.eaKey && '--- ตั้งค่าใน EA ---', issued.eaKey && `AI_Url: ${location.origin}`, issued.eaKey && `AI_EAKey: ${issued.eaKey}`, issued.login && `ใช้ได้กับบัญชี MT5 เลข ${issued.login} เท่านั้น`].filter(Boolean).join('\n')); setCopied(true); } catch { setErr(tx('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง')); }
   };
   const paused = !!data?.settings?.paused;
 
   if (!key) {
     return (
-      <main className="shell" style={{ maxWidth: 420, marginTop: 80 }}>
+      <Landing themeBtn={<ThemeBtn />}>
         <div className="card">
-          <div className="row" style={{ justifyContent: 'space-between' }}><h1>MT5 Signal Hub</h1><ThemeBtn /></div>
-          <label className="sub" htmlFor="k">รหัสผ่าน (ผู้ดูแลหรือผู้ใช้ที่ได้รับรหัสจากผู้ดูแล)</label>
+          <h2>{t("เข้าสู่ระบบ","Log in")}</h2>
+          <label className="sub" htmlFor="k">{t("รหัสผ่าน (ผู้ดูแลหรือผู้ใช้ที่ได้รับรหัสจากผู้ดูแล)","Password (admin, or a user given a password by the admin)")}</label>
           <input id="k" type="password" autoComplete="current-password" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') login(); }} />
           {loginErr && <div className="err" role="alert">{loginErr}</div>}
-          <button className="btn main" onClick={login}>เข้าสู่ระบบ</button>
-          <button className="btn" aria-expanded={fgOpen} onClick={() => { setFgOpen((v) => !v); setLoginErr(''); setFgPw(''); }}>ลืมรหัสผ่าน?</button>
+          <button className="btn main" onClick={login}>{t("เข้าสู่ระบบ","Log in")}</button>
+          <button className="btn" aria-expanded={fgOpen} onClick={() => { setFgOpen((v) => !v); setLoginErr(''); setFgPw(''); }}>{t("ลืมรหัสผ่าน?","Forgot password?")}</button>
           {fgOpen && (fgPw ? (
             <div className="bubble ai" role="status">
-              <div className="mute">รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด) รหัสเดิมใช้ไม่ได้แล้ว</div>
+              <div className="mute">{t("รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด) รหัสเดิมใช้ไม่ได้แล้ว","Your new password (shown once, write it down before closing). The old password no longer works.")}</div>
               <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{fgPw}</div>
               <div className="row">
-                <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(fgPw); setFgCopied(true); } catch { setLoginErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); } }}>{fgCopied ? 'คัดลอกแล้ว' : 'คัดลอกรหัส'}</button>
-                <button className="btn main" onClick={() => loginWith(fgPw)}>เข้าสู่ระบบด้วยรหัสนี้</button>
+                <button className="btn" onClick={async () => { try { await navigator.clipboard.writeText(fgPw); setFgCopied(true); } catch { setLoginErr(tx('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง')); } }}>{fgCopied ? t(tx("คัดลอกแล้ว"),"Copied") : t(tx("คัดลอกรหัส"),"Copy")}</button>
+                <button className="btn main" onClick={() => loginWith(fgPw)}>{t("เข้าสู่ระบบด้วยรหัสนี้","Log in with this password")}</button>
               </div>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 10, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              <div className="mute">ยืนยันตัวตนด้วยเลขบัญชี MT5 และ EA key ส่วนตัวของคุณ (ตัวเดียวกับที่ใส่ในช่อง ApiKey ของ EA) ระบบจะออกรหัสผ่านใหม่ที่สุ่มให้ ผู้ดูแลรีเซ็ตรหัสตัวเองไม่ได้ที่นี่ ถ้าไม่มี EA key แล้วให้ติดต่อผู้ดูแล</div>
-              <label className="sub" htmlFor="fgl">เลขบัญชี MT5</label>
+              <div className="mute">{t("ยืนยันตัวตนด้วยเลขบัญชี MT5 และ EA key ส่วนตัวของคุณ (ตัวเดียวกับที่ใส่ในช่อง ApiKey ของ EA) ระบบจะออกรหัสผ่านใหม่ที่สุ่มให้ ผู้ดูแลรีเซ็ตรหัสตัวเองไม่ได้ที่นี่ ถ้าไม่มี EA key แล้วให้ติดต่อผู้ดูแล","Verify with your MT5 account number and your personal EA key (the same one in the EA's ApiKey field). The system issues a new random password. Admins can't reset their own password here; if you no longer have the EA key, contact the admin.")}</div>
+              <label className="sub" htmlFor="fgl">{t(tx("เลขบัญชี MT5"),"MT5 account number")}</label>
               <input id="fgl" inputMode="numeric" autoComplete="off" value={fgLogin} onChange={(e) => setFgLogin(e.target.value)} />
               <label className="sub" htmlFor="fgk">EA key</label>
               <input id="fgk" type="password" autoComplete="off" value={fgKey} onChange={(e) => setFgKey(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && fgLogin.trim() && fgKey.trim() && !fgBusy) forgot(); }} />
-              <button className="btn warn" disabled={fgBusy || !fgLogin.trim() || !fgKey.trim()} onClick={forgot}>รีเซ็ตรหัสผ่าน</button>
+              <button className="btn warn" disabled={fgBusy || !fgLogin.trim() || !fgKey.trim()} onClick={forgot}>{t("รีเซ็ตรหัสผ่าน","Reset password")}</button>
             </div>
           ))}
         </div>
-      </main>
+      </Landing>
     );
   }
 
   return (
     <main className="shell">
       <div className="top">
-        <div><h1>MT5 Signal Hub</h1><div className="sub">AI เลือกกลยุทธ์ · เซิร์ฟเวอร์ตรวจเงื่อนไข · EA ส่งคำสั่ง</div></div>
+        <div><h1>MT5 Signal Hub</h1><div className="sub">{t("AI เลือกกลยุทธ์ · เซิร์ฟเวอร์ตรวจเงื่อนไข · EA ส่งคำสั่ง","AI picks the strategy · server checks conditions · EA sends orders")}</div></div>
         <div className="row">
-          <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? 'ผู้ดูแล' : 'ผู้ใช้'})` : ''}{!isAdmin && data?.account?.login ? ` · MT5 ${data.account.login}` : ''}</span>
+          <span className="mute">{data?.me ? `${data.me.name} (${isAdmin ? t("ผู้ดูแล","Admin") : t("ผู้ใช้","User")})` : ''}{!isAdmin && data?.account?.login ? ` · MT5 ${data.account.login}` : ''}</span>
           {isAdmin && data?.accounts?.length > 1 && (
-            <select aria-label="เลือกบัญชีเทรดที่ต้องการดู" value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setData(null); firstLoad.current = true; setAcct(e.target.value); }}>
+            <select aria-label={tx("เลือกบัญชีเทรดที่ต้องการดู")} value={acct} onChange={(e) => { lastSeen.current = null; announced.current = null; newsState.current = null; setData(null); firstLoad.current = true; setAcct(e.target.value); }}>
               {data.accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}{a.login ? ` (${a.login})` : ''}</option>)}
             </select>
           )}
-          <span className={'chip ' + (paused ? 'no' : 'ok')}>{paused ? 'ระบบหยุดอยู่' : 'ระบบทำงาน'}</span>
+          <span className={'chip ' + (paused ? 'no' : 'ok')}>{paused ? t("ระบบหยุดอยู่","System paused") : t("ระบบทำงาน","System running")}</span>
           {isAdmin && <button className={'btn ' + (paused ? 'main' : 'warn')} disabled={busy} onClick={() => act(() => api('/api/settings', { paused: !paused }))}>
-            {paused ? 'เปิดระบบ' : 'หยุดส่งคำสั่งทั้งหมด'}
+            {paused ? t("เปิดระบบ","Resume system") : t("หยุดส่งคำสั่งทั้งหมด","Pause all orders")}
           </button>}
+          <LangBtn />
           <ThemeBtn />
-          <button className="btn" onClick={logout}>ออกจากระบบ</button>
+          <button className="btn" onClick={logout}>{t("ออกจากระบบ","Log out")}</button>
         </div>
       </div>
       {err && <div className="err" role="alert">{err}</div>}
@@ -366,16 +371,16 @@ export default function Page() {
           <div className="orb-glow" /><div className="orb-wave" /><div className="orb-wave w2" /><div className="orb-ring" /><div className="orb-core" />
         </div></div>
         <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div><h2>คุยกับ AI Strategist</h2>
-            <div aria-live="polite" style={{ color: 'var(--accent)', fontSize: 14, marginTop: 4 }}>{mode === 'listening' ? 'กำลังฟัง…' : mode === 'speaking' ? 'กำลังตอบ…' : 'พร้อมคุย · กดปุ่มเพื่อเริ่ม'}</div></div>
-          <div className="bubble"><div className="mute">คุณ</div>{heard || 'ลองถามว่า "ตอนนี้ใช้กลยุทธ์อะไร"'}</div>
+          <div><h2>{tx("คุยกับ AI Strategist")}</h2>
+            <div aria-live="polite" style={{ color: 'var(--accent)', fontSize: 14, marginTop: 4 }}>{mode === 'listening' ? tx('กำลังฟัง…') : mode === 'speaking' ? tx('กำลังตอบ…') : tx('พร้อมคุย · กดปุ่มเพื่อเริ่ม')}</div></div>
+          <div className="bubble"><div className="mute">{tx("คุณ")}</div>{heard || (tx('ลองถามว่า') + ' "' + tx('ตอนนี้ใช้กลยุทธ์อะไร') + '"')}</div>
           <div className="bubble ai"><div className="mute">AI</div>{reply || 'AI จะตอบที่นี่'}</div>
           <div className="row">
-            <button className="btn main" onClick={() => toggleMic()}>{mode === 'idle' ? 'คุยกับ AI' : 'หยุด'}</button>
-            <button className="btn" onClick={() => ask('ตอนนี้ใช้กลยุทธ์อะไร')}>ตอนนี้ใช้กลยุทธ์อะไร</button>
-            <button className="btn" onClick={() => ask('สรุปคำสั่งล่าสุด')}>สรุปคำสั่งล่าสุด</button>
-            <button className="btn" onClick={() => ask('วิเคราะห์ตลาดตอนนี้')}>วิเคราะห์ตลาดตอนนี้</button>
-            <button className="btn" onClick={() => ask('มีข่าวแรงอะไรใกล้นี้บ้าง')}>ข่าวแรงใกล้นี้</button>
+            <button className="btn main" onClick={() => toggleMic()}>{mode === 'idle' ? tx('คุยกับ AI') : tx('หยุด')}</button>
+            <button className="btn" onClick={() => ask('ตอนนี้ใช้กลยุทธ์อะไร')}>{tx("ตอนนี้ใช้กลยุทธ์อะไร")}</button>
+            <button className="btn" onClick={() => ask('สรุปคำสั่งล่าสุด')}>{tx("สรุปคำสั่งล่าสุด")}</button>
+            <button className="btn" onClick={() => ask('วิเคราะห์ตลาดตอนนี้')}>{tx("วิเคราะห์ตลาดตอนนี้")}</button>
+            <button className="btn" onClick={() => ask('มีข่าวแรงอะไรใกล้นี้บ้าง')}>{tx("ข่าวแรงใกล้นี้")}</button>
             <button className={'btn ' + (autoVoice ? 'main' : '')} aria-pressed={autoVoice} onClick={toggleAutoVoice}>{autoVoice ? '🔔 เสียงแจ้งเตือน: เปิด' : '🔕 เสียงแจ้งเตือน: ปิด'}</button>
             <button className={'btn ' + (orb !== 'off' ? 'main' : '')} aria-pressed={orb !== 'off'} onClick={() => (orb === 'off' ? openOrb() : closeOrb())}>{orb === 'off' ? '🔮 เปิดลูกกลมลอย' : '🔮 ปิดลูกกลมลอย'}</button>
           </div>
@@ -388,73 +393,73 @@ export default function Page() {
         const al = sy.allowed ?? { sg: true, sr: true };
         const can = (m: string) => (m === 'sg' ? al.sg : m === 'sr' ? al.sr : al.sg && al.sr);
         const set = (m: string) => act(() => api('/api/systems', { sg: m !== 'sr', sr: m !== 'sg' }));
-        const dot = (ts: number | null) => (ts && Date.now() - ts < 3 * 60_000 ? 'ออนไลน์ · ' + ago(ts) + ' ที่แล้ว' : ts ? 'เงียบ · ล่าสุด ' + ago(ts) + ' ที่แล้ว' : 'ยังไม่เคยเชื่อมต่อ');
+        const dot = (ts: number | null) => (ts && Date.now() - ts < 3 * 60_000 ? tx('ออนไลน์ ·') + ' ' + ago(ts) + ' ' + tx('ที่แล้ว') : ts ? tx('เงียบ · ล่าสุด') + ' ' + ago(ts) + ' ' + tx('ที่แล้ว') : tx('ยังไม่เคยเชื่อมต่อ'));
         const ok = (ts: number | null) => !!ts && Date.now() - ts < 3 * 60_000;
-        return (<section className="card" aria-label="เลือกระบบเทรด">
-          <h2>เลือกระบบเทรดที่ใช้</h2>
-          <div className="row" role="group" aria-label="เลือกระบบ">
-            {([['sg', 'SmartGold Grid'], ['sr', 'SR Breakout'], ['both', 'ใช้ทั้งสอง']] as const).map(([m, label]) => (
-              <button key={m} className={'btn ' + (mode === m ? 'main' : '')} aria-pressed={mode === m} disabled={busy || !can(m)} title={can(m) ? undefined : 'ผู้ดูแลไม่ได้ให้สิทธิ์ระบบนี้'} onClick={() => mode !== m && set(m)}>{label}</button>
+        return (<section className="card" aria-label={tx("เลือกระบบเทรด")}>
+          <h2>{tx("เลือกระบบเทรดที่ใช้")}</h2>
+          <div className="row" role="group" aria-label={tx("เลือกระบบ")}>
+            {([['sg', 'SmartGold Grid'], ['sr', 'SR Breakout'], ['both', tx('ใช้ทั้งสอง')]] as const).map(([m, label]) => (
+              <button key={m} className={'btn ' + (mode === m ? 'main' : '')} aria-pressed={mode === m} disabled={busy || !can(m)} title={can(m) ? undefined : tx('ผู้ดูแลไม่ได้ให้สิทธิ์ระบบนี้')} onClick={() => mode !== m && set(m)}>{label}</button>
             ))}
           </div>
-          <div style={{ overflowX: 'auto' }}><table><thead><tr><th>ระบบ</th><th>สถานะสวิตช์</th><th>การเชื่อมต่อ EA</th></tr></thead><tbody>
-            <tr><td><b>SmartGold Grid</b></td><td><span className={'chip ' + (sy.sg ? 'ok' : 'no')}>{!al.sg ? 'ไม่ได้รับสิทธิ์' : sy.sg ? 'เปิด' : 'ปิด'}</span></td><td><span className={'chip ' + (ok(seen.sg) ? 'ok' : '')}>{dot(seen.sg)}</span></td></tr>
-            <tr><td><b>SR Breakout</b></td><td><span className={'chip ' + (sy.sr ? 'ok' : 'no')}>{!al.sr ? 'ไม่ได้รับสิทธิ์' : sy.sr ? 'เปิด' : 'ปิด'}</span></td><td><span className={'chip ' + (ok(seen.sr) ? 'ok' : '')}>{dot(seen.sr)}</span>{sy.srInfo?.symbol ? ` ${sy.srInfo.symbol}` : ''}{sy.srInfo?.pos != null ? ` · ไม้ที่เปิดอยู่ ${sy.srInfo.pos}` : ''}</td></tr>
+          <div style={{ overflowX: 'auto' }}><table><thead><tr><th>{tx("ระบบ")}</th><th>{tx("สถานะสวิตช์")}</th><th>{tx("การเชื่อมต่อ EA")}</th></tr></thead><tbody>
+            <tr><td><b>SmartGold Grid</b></td><td><span className={'chip ' + (sy.sg ? 'ok' : 'no')}>{!al.sg ? tx('ไม่ได้รับสิทธิ์') : sy.sg ? tx('เปิด') : tx('ปิด')}</span></td><td><span className={'chip ' + (ok(seen.sg) ? 'ok' : '')}>{dot(seen.sg)}</span></td></tr>
+            <tr><td><b>SR Breakout</b></td><td><span className={'chip ' + (sy.sr ? 'ok' : 'no')}>{!al.sr ? tx('ไม่ได้รับสิทธิ์') : sy.sr ? tx('เปิด') : tx('ปิด')}</span></td><td><span className={'chip ' + (ok(seen.sr) ? 'ok' : '')}>{dot(seen.sr)}</span>{sy.srInfo?.symbol ? ` ${sy.srInfo.symbol}` : ''}{sy.srInfo?.pos != null ? ` · ไม้ที่เปิดอยู่ ${sy.srInfo.pos}` : ''}</td></tr>
           </tbody></table></div>
-          <div className="mute">ระบบที่ปิดจะหยุดเปิดออเดอร์ใหม่ ส่วนออเดอร์ที่เปิดอยู่แล้วยังถูกดูแลและปิดตามปกติ EA อ่านสวิตช์ทุกไม่กี่วินาที (SmartGold) หรือทุก 30 วินาที (SR Breakout) ต้องมีอย่างน้อย 1 ระบบเปิดอยู่</div>
+          <div className="mute">{tx("ระบบที่ปิดจะหยุดเปิดออเดอร์ใหม่ ส่วนออเดอร์ที่เปิดอยู่แล้วยังถูกดูแลและปิดตามปกติ EA อ่านสวิตช์ทุกไม่กี่วินาที (SmartGold) หรือทุก 30 วินาที (SR Breakout) ต้องมีอย่างน้อย 1 ระบบเปิดอยู่")}</div>
         </section>);
       })()}
 
       {data?.chart?.bars?.length > 1 && <ChartCard chart={data.chart} symbol={selRow?.symbol ?? d?.symbol ?? ''} tf={selRow?.tf ?? d?.tf ?? ''} regime={selRow?.regime ?? d?.regime} />}
       {!isAdmin && data && <section className="card">
-        <h2>บัญชีของฉัน</h2>
+        <h2>{tx("บัญชีของฉัน")}</h2>
         <div className="mute">{data.me?.name}{data.account?.login ? ` · บัญชี MT5 ${data.account.login}` : ''}</div>
         {myNewPw ? (
           <div className="bubble ai" role="status">
-            <div className="mute">รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด)</div>
+            <div className="mute">{tx("รหัสผ่านใหม่ของคุณ (แสดงครั้งเดียว จดไว้ก่อนปิด)")}</div>
             <div style={{ fontFamily: 'monospace', fontSize: 18, margin: '8px 0', wordBreak: 'break-all', userSelect: 'all' }}>{myNewPw}</div>
             <div className="row">
-              <button className="btn main" onClick={async () => { try { await navigator.clipboard.writeText(myNewPw); setPwCopied(true); } catch { setErr('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง'); } }}>{pwCopied ? 'คัดลอกแล้ว' : 'คัดลอกรหัส'}</button>
-              <button className="btn" onClick={() => setMyNewPw('')}>ปิด</button>
+              <button className="btn main" onClick={async () => { try { await navigator.clipboard.writeText(myNewPw); setPwCopied(true); } catch { setErr(tx('คัดลอกไม่สำเร็จ ให้ลากคลุมข้อความแล้วคัดลอกเอง')); } }}>{pwCopied ? tx('คัดลอกแล้ว') : tx('คัดลอกรหัส')}</button>
+              <button className="btn" onClick={() => setMyNewPw('')}>{tx('ปิดหน้าต่าง')}</button>
             </div>
           </div>
         ) : (
           <div className="row">
-            <label className="sub" htmlFor="cpw">รหัสผ่านปัจจุบัน</label>
+            <label className="sub" htmlFor="cpw">{tx("รหัสผ่านปัจจุบัน")}</label>
             <input id="cpw" type="password" autoComplete="current-password" value={curPw} onChange={(e) => setCurPw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && curPw.trim() && !busy) resetMyPw(); }} />
-            <button className="btn warn" disabled={busy || !curPw.trim()} onClick={resetMyPw}>รีเซ็ตรหัสผ่านของฉัน</button>
+            <button className="btn warn" disabled={busy || !curPw.trim()} onClick={resetMyPw}>{tx("รีเซ็ตรหัสผ่านของฉัน")}</button>
           </div>
         )}
-        <div className="mute">ระบบออกรหัสใหม่ที่สุ่มให้ (ตั้งเองไม่ได้ เพื่อความปลอดภัย) รหัสเดิมใช้ไม่ได้ทันที และอุปกรณ์อื่นที่ล็อกอินอยู่จะถูกออกจากระบบ ถ้าลืมรหัสจนเข้าไม่ได้ ให้ติดต่อผู้ดูแลเพื่อรีเซ็ตให้</div>
+        <div className="mute">{tx("ระบบออกรหัสใหม่ที่สุ่มให้ (ตั้งเองไม่ได้ เพื่อความปลอดภัย) รหัสเดิมใช้ไม่ได้ทันที และอุปกรณ์อื่นที่ล็อกอินอยู่จะถูกออกจากระบบ ถ้าลืมรหัสจนเข้าไม่ได้ ให้ติดต่อผู้ดูแลเพื่อรีเซ็ตให้")}</div>
       </section>}
 
       {data?.news && <NewsCard news={data.news} isAdmin={isAdmin} busy={busy} save={(b) => act(() => api('/api/settings', b))} />}
 
       {symRows.length > 0 && <section className="card">
-        <div className="row" style={{ justifyContent: 'space-between' }}><h2>คู่เงินที่ EA ส่งมา ({symRows.length})</h2><span className="mute">กดแถวเพื่อดูกราฟและเลือกคู่สำหรับสั่งออเดอร์</span>{symRows.some((r) => Date.now() - r.ts > 30 * 60_000) && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/symbols', { stale: true, minutes: 30 }, 'DELETE'))}>ลบคู่ที่เงียบเกิน 30 นาที</button>}</div>
-        <div style={{ overflowX: 'auto' }}><table><thead><tr><th>คู่เงิน</th><th>TF</th><th>แนวโน้ม</th><th>ADX</th><th>ที่มา</th><th>โปรไฟล์ / กลยุทธ์</th><th>มั่นใจ</th><th>อัปเดต</th><th></th></tr></thead><tbody>
+        <div className="row" style={{ justifyContent: 'space-between' }}><h2>{tx("คู่เงินที่ EA ส่งมา (")}{symRows.length})</h2><span className="mute">{tx("กดแถวเพื่อดูกราฟและเลือกคู่สำหรับสั่งออเดอร์")}</span>{symRows.some((r) => Date.now() - r.ts > 30 * 60_000) && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/symbols', { stale: true, minutes: 30 }, 'DELETE'))}>{tx("ลบคู่ที่เงียบเกิน 30 นาที")}</button>}</div>
+        <div style={{ overflowX: 'auto' }}><table><thead><tr><th>{tx("คู่เงิน")}</th><th>TF</th><th>{tx("แนวโน้ม")}</th><th>ADX</th><th>{tx("ที่มา")}</th><th>{tx("โปรไฟล์ / กลยุทธ์")}</th><th>{tx("มั่นใจ")}</th><th>{tx("อัปเดต")}</th><th></th></tr></thead><tbody>
           {symRows.map((r) => {
             const stale = Date.now() - r.ts > 5 * 60_000, on = r.key === (sel || data?.selSym);
             return (<tr key={r.key} tabIndex={0} role="button" aria-pressed={on} style={{ cursor: 'pointer', background: on ? 'var(--line)' : undefined, opacity: stale ? 0.55 : 1 }}
               onClick={() => { setSel(r.key); setMSym(r.symbol); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(r.key); setMSym(r.symbol); } }}>
               <td><b>{r.symbol}</b></td><td>{r.tf}</td>
               <td><span className={'chip ' + (r.regime === 'trend_up' ? 'ok' : r.regime === 'trend_down' ? 'no' : '')}>{r.regime === 'trend_up' ? '▲ ' : r.regime === 'trend_down' ? '▼ ' : ''}{REGIME[r.regime] ?? r.regime}</span></td>
-              <td>{typeof r.adx === 'number' ? r.adx.toFixed(0) : '-'}</td><td>{r.src === 'ai' ? 'AI' : r.src === 'ea' ? 'กติกา EA' : '-'}</td>
+              <td>{typeof r.adx === 'number' ? r.adx.toFixed(0) : '-'}</td><td>{r.src === 'ai' ? 'AI' : r.src === 'ea' ? tx('กติกา EA') : '-'}</td>
               <td>{r.profile ?? '-'}{r.hold ? ' (ค้างค่าเดิม)' : ''}</td><td>{Math.round((r.confidence ?? 0) * 100)}%</td>
               <td>{ago(r.ts)}{stale ? ' · EA เงียบ' : ''}</td>
-              <td><button className="btn" disabled={busy} title="ลบคู่นี้ออกจากรายการ (ถ้า EA ยังส่งอยู่ จะกลับมาเอง)" onClick={(e) => { e.stopPropagation(); if (confirm(`ลบ ${r.symbol} ออกจากรายการ?\nถ้า EA ยังส่งคู่นี้อยู่ จะกลับมาในรอบถัดไป`)) act(() => api('/api/symbols', { key: r.key }, 'DELETE')); }}>ลบ</button></td></tr>);
+              <td><button className="btn" disabled={busy} title={tx("ลบคู่นี้ออกจากรายการ (ถ้า EA ยังส่งอยู่ จะกลับมาเอง)")} onClick={(e) => { e.stopPropagation(); if (confirm(`ลบ ${r.symbol} ออกจากรายการ?\nถ้า EA ยังส่งคู่นี้อยู่ จะกลับมาในรอบถัดไป`)) act(() => api('/api/symbols', { key: r.key }, 'DELETE')); }}>{tx("ลบ")}</button></td></tr>);
           })}
         </tbody></table></div>
         {selRow && <div style={{ fontSize: 14, lineHeight: 1.6 }}><b>{selRow.symbol}</b>: {selRow.reason}</div>}
-        {data?.scanAi?.summary && <div style={{ fontSize: 14, lineHeight: 1.6, marginTop: 6 }}><b>AI สรุปภาพรวม</b> <span className="mute">({ago(data.scanAi.ts)})</span>: {data.scanAi.summary}</div>}
-        {data?.scanAi?.error && <div className="mute" style={{ marginTop: 6 }}>AI วิเคราะห์ชุดสแกนไม่สำเร็จ ตอนนี้แสดงผลจากกติกาของ EA: {data.scanAi.error}</div>}
+        {data?.scanAi?.summary && <div style={{ fontSize: 14, lineHeight: 1.6, marginTop: 6 }}><b>AI {tx("สรุปภาพรวม")}</b> <span className="mute">({ago(data.scanAi.ts)})</span>: {data.scanAi.summary}</div>}
+        {data?.scanAi?.error && <div className="mute" style={{ marginTop: 6 }}>AI {tx("วิเคราะห์ชุดสแกนไม่สำเร็จ ตอนนี้แสดงผลจากกติกาของ EA:")} {data.scanAi.error}</div>}
       </section>}
 
       <section className="card">
-        <h2>เปิดออเดอร์แรกเอง</h2>
+        <h2>{tx("เปิดออเดอร์แรกเอง")}</h2>
         <div className="row">
           <label className="sub" htmlFor="msym">Symbol</label>
-          <input id="msym" list="symlist" style={{ width: 130 }} value={mSym} placeholder={selRow?.symbol ?? d?.symbol ?? 'เช่น XAUUSD'} onChange={(e) => { setMSym(e.target.value); const k = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); if (symRows.some((r) => r.key === k)) setSel(k); }} />
+          <input id="msym" list="symlist" style={{ width: 130 }} value={mSym} placeholder={selRow?.symbol ?? d?.symbol ?? tx('เช่น XAUUSD')} onChange={(e) => { setMSym(e.target.value); const k = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); if (symRows.some((r) => r.key === k)) setSel(k); }} />
           <datalist id="symlist">{symRows.map((r) => <option key={r.key} value={r.symbol} />)}</datalist>
           {symRows.find((r) => r.key === ordSym.replace(/[^A-Z0-9]/g, '').slice(0, 6)) && (() => { const r = symRows.find((x) => x.key === ordSym.replace(/[^A-Z0-9]/g, '').slice(0, 6)); return <span className={'chip ' + (r.regime === 'trend_up' ? 'ok' : r.regime === 'trend_down' ? 'no' : '')}>{r.regime === 'trend_up' ? '▲ ' : r.regime === 'trend_down' ? '▼ ' : ''}{REGIME[r.regime] ?? r.regime}</span>; })()}
           <label className="sub" htmlFor="mlot">Lot</label>
@@ -467,56 +472,56 @@ export default function Page() {
             }}>{sd === 'BUY' ? 'BUY ซื้อ' : 'SELL ขาย'}</button>
           ))}
         </div>
-        <div className="mute">{mMsg || 'ส่งคำสั่งเข้า MT5 ผ่านคิวเดียวกับออเดอร์อื่น (ตรวจ lot สูงสุด ข่าว และหยุดชั่วคราวเหมือนกัน) ไม่ตั้ง SL/TP ให้กริดดูแลการปิดเอง'}</div>
+        <div className="mute">{mMsg || tx('ส่งคำสั่งเข้า MT5 ผ่านคิวเดียวกับออเดอร์อื่น (ตรวจ lot สูงสุด ข่าว และหยุดชั่วคราวเหมือนกัน) ไม่ตั้ง SL/TP ให้กริดดูแลการปิดเอง')}</div>
       </section>
 
       <div className="grid">
         <section className="card">
-          <div className="row" style={{ justifyContent: 'space-between' }}><h2>การตัดสินใจล่าสุดของ AI</h2><span className="mute">{d ? `${d.symbol} · ${d.tf} · ${new Date(d.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}</span></div>
-          {!d ? <div className="mute">ยังไม่มีข้อมูล รอ EA ส่งแท่งเทียน หรือกดทดสอบด้านล่าง</div> : (<>
+          <div className="row" style={{ justifyContent: 'space-between' }}><h2>{tx("การตัดสินใจล่าสุดของ AI")}</h2><span className="mute">{d ? `${d.symbol} · ${d.tf} · ${new Date(d.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}` : ''}</span></div>
+          {!d ? <div className="mute">{tx("ยังไม่มีข้อมูล รอ EA ส่งแท่งเทียน หรือกดทดสอบด้านล่าง")}</div> : (<>
             <div className="row"><span className="chip ok">{REGIME[d.regime] ?? d.regime}</span><b style={{ fontSize: 19 }}>{d.strategy}</b></div>
-            <div><div className="bar"><i style={{ width: Math.round(d.confidence * 100) + '%' }} /></div><div className="mute" style={{ marginTop: 6 }}>ความมั่นใจ {Math.round(d.confidence * 100)}% · {d.provider ?? '-'} {d.model}</div></div>
+            <div><div className="bar"><i style={{ width: Math.round(d.confidence * 100) + '%' }} /></div><div className="mute" style={{ marginTop: 6 }}>{tx("ความมั่นใจ")} {Math.round(d.confidence * 100)}% · {d.provider ?? '-'} {d.model}</div></div>
             <div style={{ fontSize: 14, lineHeight: 1.6 }}>{d.reason}</div>
-            <div className="mute">กลยุทธ์ที่ดึงมาใช้กับสภาพตลาดนี้: {d.candidates?.length ? d.candidates.join(', ') : 'ไม่มี (ไม่เทรด)'}</div>
+            <div className="mute">{tx("กลยุทธ์ที่ดึงมาใช้กับสภาพตลาดนี้:")} {d.candidates?.length ? d.candidates.join(', ') : tx('ไม่มี (ไม่เทรด)')}</div>
             {d.eval && <div style={{ fontSize: 14, display: 'grid', gap: 6, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-              {d.eval.results.map((r: any) => <div key={r.text} className="row" style={{ justifyContent: 'space-between' }}><span>{r.text}</span><span className={r.ok ? 'buy' : 'sell'}>{r.ok ? 'ผ่าน' : 'ไม่ผ่าน'}</span></div>)}
+              {d.eval.results.map((r: any) => <div key={r.text} className="row" style={{ justifyContent: 'space-between' }}><span>{r.text}</span><span className={r.ok ? 'buy' : 'sell'}>{r.ok ? tx('ผ่าน') : tx('ไม่ผ่าน')}</span></div>)}
             </div>}
-            {d.kind === 'grid' ? <span className="chip ok">โปรไฟล์กริดของ EA</span> : <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? 'ผ่านเงื่อนไข' : 'ไม่เข้าเทรดรอบนี้'}</span>}
+            {d.kind === 'grid' ? <span className="chip ok">{tx("โปรไฟล์กริดของ EA")}</span> : <span className={'chip ' + (d.pass ? 'ok' : 'no')}>{d.pass ? tx('ผ่านเงื่อนไข') : tx('ไม่เข้าเทรดรอบนี้')}</span>}
           </>)}
           <div className="row" style={{ borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-            <label className="sub" htmlFor="iv">ให้ AI วิเคราะห์ทุก</label>
+            <label className="sub" htmlFor="iv">{tx("ให้ AI วิเคราะห์ทุก")}</label>
             <select id="iv" value={iv} onChange={(e) => setIv(Number(e.target.value))}>
               {INTERVALS.map((m) => <option key={m} value={m}>{m >= 60 ? m / 60 + ' ชั่วโมง' : m + ' นาที'}</option>)}
             </select>
-            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { intervalMin: iv }))}>บันทึก</button>
-            <span className="mute">ตอนนี้: {data?.ai?.intervalMin ?? data?.settings?.intervalMin ?? 15} นาที{data?.ai?.own ? ' · ยิ่งถี่ยิ่งใช้ token ของคุณมากขึ้น' : ''}</span>
+            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { intervalMin: iv }))}>{tx("บันทึก")}</button>
+            <span className="mute">{tx("ตอนนี้:")} {data?.ai?.intervalMin ?? data?.settings?.intervalMin ?? 15} {tx("นาที")}{data?.ai?.own ? ' · ยิ่งถี่ยิ่งใช้ token ของคุณมากขึ้น' : ''}</span>
           </div>
           {isAdmin && <div className="row">
-            <label className="sub" htmlFor="hold">หน่วงออเดอร์ก่อนส่งเข้า MT5 เพื่อพูดสรุปตลาด</label>
+            <label className="sub" htmlFor="hold">{tx("หน่วงออเดอร์ก่อนส่งเข้า MT5 เพื่อพูดสรุปตลาด")}</label>
             <select id="hold" value={hold} onChange={(e) => setHold(Number(e.target.value))}>
-              {HOLDS.map((m) => <option key={m} value={m}>{m ? m + ' วินาที' : 'ไม่หน่วง'}</option>)}
+              {HOLDS.map((m) => <option key={m} value={m}>{m ? m + ' วินาที' : tx('ไม่หน่วง')}</option>)}
             </select>
-            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { holdSec: hold }))}>บันทึก</button>
-            <span className="mute">ตอนนี้: {data?.settings?.holdSec ?? 15} วินาที (หน่วงเฉพาะตอนเปิดหน้านี้พร้อมเสียงแจ้งเตือนอยู่)</span>
+            <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { holdSec: hold }))}>{tx("บันทึก")}</button>
+            <span className="mute">{tx("ตอนนี้:")} {data?.settings?.holdSec ?? 15} {tx("วินาที (หน่วงเฉพาะตอนเปิดหน้านี้พร้อมเสียงแจ้งเตือนอยู่)")}</span>
           </div>}
           {isAdmin && <div className="row">
-            <label className="sub" htmlFor="rsrc">แหล่งสภาพตลาด</label>
+            <label className="sub" htmlFor="rsrc">{tx("แหล่งสภาพตลาด")}</label>
             <select id="rsrc" disabled={busy} value={data?.settings?.regimeSource ?? 'ai'} onChange={(e) => act(() => api('/api/settings', { regimeSource: e.target.value }))}>
-              <option value="ai">AI วิเคราะห์เอง</option>
-              <option value="tradingview">ดึงแนวโน้มจาก TradingView เอง (ไม่ต้องใช้ Pine / webhook)</option>
-              <option value="chart">กราฟจาก EA คำนวณเอง (ไม่เรียก AI ไม่ต้องใช้ TradingView)</option>
-              <option value="both">Webhook ก่อน ถ้าไม่มีใช้ AI</option>
-              <option value="webhook">Webhook อย่างเดียว (ไม่เรียก AI)</option>
+              <option value="ai">AI {tx("วิเคราะห์เอง")}</option>
+              <option value="tradingview">{tx("ดึงแนวโน้มจาก TradingView เอง (ไม่ต้องใช้ Pine / webhook)")}</option>
+              <option value="chart">{tx("กราฟจาก EA คำนวณเอง (ไม่เรียก AI ไม่ต้องใช้ TradingView)")}</option>
+              <option value="both">Webhook {tx("ก่อน ถ้าไม่มีใช้ AI")}</option>
+              <option value="webhook">Webhook {tx("อย่างเดียว (ไม่เรียก AI)")}</option>
             </select>
-            <span className="mute">ใช้กับ EA กริด · "กราฟจาก EA" ใช้ ADX/EMA จากแท่งเทียนที่ EA ส่งมา (ต้องใช้ EA เวอร์ชันใหม่)</span>
+            <span className="mute">{tx("ใช้กับ EA กริด ·")} "{tx("กราฟจาก EA")}" {tx("ใช้ ADX/EMA จากแท่งเทียนที่ EA ส่งมา (ต้องใช้ EA เวอร์ชันใหม่)")}</span>
           </div>}
-          {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)</button>}
+          {isAdmin && <button className="btn" disabled={busy} onClick={() => act(() => api('/api/ai/decide', { ...SAMPLE, execute: false }))}>{tx("ทดสอบ AI ด้วยข้อมูลตัวอย่าง (ไม่ส่งคำสั่ง)")}</button>}
         </section>
 
         <section className="card">
-          <h2>ผู้ให้บริการ AI{data?.ai?.own ? ' (ของคุณ)' : ''}</h2>
-          {data?.ai?.own && <div className="mute">คุณใช้ API key ของตัวเอง ค่า token จะถูกเรียกเก็บจากบัญชีผู้ให้บริการ AI ของคุณโดยตรง ไม่ผ่านผู้ดูแล key เก็บแบบเข้ารหัสและไม่ถูกส่งกลับมาแสดง</div>}
-          {data?.ai?.own && !Object.values(data.ai.keys ?? {}).some(Boolean) && <div className="err" role="alert">ยังไม่มี API key ของคุณ จึงยังใช้ AI ไม่ได้ (คุยกับ AI, วิเคราะห์ตลาด, ให้ AI จัดสภาพตลาด) เลือกผู้ให้บริการ ใส่ key แล้วกด "บันทึก API key"</div>}
+          <h2>{tx("ผู้ให้บริการ AI")}{data?.ai?.own ? ' (ของคุณ)' : ''}</h2>
+          {data?.ai?.own && <div className="mute">{tx("คุณใช้ API key ของตัวเอง ค่า token จะถูกเรียกเก็บจากบัญชีผู้ให้บริการ AI ของคุณโดยตรง ไม่ผ่านผู้ดูแล key เก็บแบบเข้ารหัสและไม่ถูกส่งกลับมาแสดง")}</div>}
+          {data?.ai?.own && !Object.values(data.ai.keys ?? {}).some(Boolean) && <div className="err" role="alert">{tx("ยังไม่มี API key ของคุณ จึงยังใช้ AI ไม่ได้ (คุยกับ AI, วิเคราะห์ตลาด, ให้ AI จัดสภาพตลาด) เลือกผู้ให้บริการ ใส่ key แล้วกด")} "{tx("บันทึก API key")}"</div>}
           <div className="row">
             {PROVIDERS.map(([id, name]) => (
               <button key={id} className={'btn ' + (provider === id ? 'main' : '')} onClick={() => setProvider(id)}>
@@ -524,25 +529,25 @@ export default function Page() {
               </button>
             ))}
           </div>
-          <label className="sub" htmlFor="m">ชื่อโมเดล (เว้นว่างเพื่อใช้ค่าเริ่มต้น)</label>
-          <input id="m" value={model} onChange={(e) => setModel(e.target.value)} placeholder="เช่น claude-sonnet-5-5" />
-          <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { provider, model: model.trim() }))}>บันทึก</button>
+          <label className="sub" htmlFor="m">{tx("ชื่อโมเดล (เว้นว่างเพื่อใช้ค่าเริ่มต้น)")}</label>
+          <input id="m" value={model} onChange={(e) => setModel(e.target.value)} placeholder={tx("เช่น claude-sonnet-5-5")} />
+          <button className="btn main" disabled={busy} onClick={() => act(() => api('/api/aiconf', { provider, model: model.trim() }))}>{tx("บันทึก")}</button>
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'grid', gap: 8 }}>
             <label className="sub" htmlFor="ak">API key ของ {PROVIDERS.find(([id]) => id === provider)?.[1]}{data?.ai?.keyHints?.[provider] ? ` (ตอนนี้: ${data.ai.keyHints[provider]})` : ''}</label>
             <input id="ak" type="password" autoComplete="off" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder={provider === 'anthropic' ? 'sk-ant-...' : provider === 'openai' ? 'sk-...' : 'AIza...'} />
             <div className="row">
-              <button className="btn main" disabled={busy || !keyDraft.trim()} onClick={() => act(async () => { await api('/api/keys', { provider, key: keyDraft }); setKeyDraft(''); setSaved('บันทึก key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>บันทึก API key</button>
-              {data?.ai?.keys?.[provider] && <button className="btn" disabled={busy} onClick={() => act(async () => { await api('/api/keys', { provider, key: '' }); setSaved('ลบ key แล้ว'); setTimeout(() => setSaved(''), 3000); })}>ลบ key</button>}
+              <button className="btn main" disabled={busy || !keyDraft.trim()} onClick={() => act(async () => { await api('/api/keys', { provider, key: keyDraft }); setKeyDraft(''); setSaved(tx('บันทึก key แล้ว')); setTimeout(() => setSaved(''), 3000); })}>{tx("บันทึก API key")}</button>
+              {data?.ai?.keys?.[provider] && <button className="btn" disabled={busy} onClick={() => act(async () => { await api('/api/keys', { provider, key: '' }); setSaved(tx('ลบ key แล้ว')); setTimeout(() => setSaved(''), 3000); })}>{tx("ลบ key")}</button>}
               {saved && <span className="chip ok" role="status">{saved}</span>}
             </div>
           </div>
-          <div className="mute">ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด</div>
+          <div className="mute">{tx("ถ้าเจ้าที่เลือกใช้ไม่ได้ ระบบจะลองเจ้าอื่นที่มี key ตามลำดับ และถ้าไม่ได้เลยจะไม่เทรด")}</div>
         </section>
       </div>
 
       {mapDraft && <section className="card">
-        <h2>กลยุทธ์ตามสภาพตลาด</h2>
-        <div className="mute">AI ระบุสภาพตลาดก่อน แล้วระบบดึงกลยุทธ์ที่ติ๊กไว้ในแต่ละสภาพมาตรวจเงื่อนไขเข้าเทรด ถ้าไม่ติ๊กอะไรเลย = ไม่เทรดในสภาพนั้น</div>
+        <h2>{tx("กลยุทธ์ตามสภาพตลาด")}</h2>
+        <div className="mute">AI {tx("ระบุสภาพตลาดก่อน แล้วระบบดึงกลยุทธ์ที่ติ๊กไว้ในแต่ละสภาพมาตรวจเงื่อนไขเข้าเทรด ถ้าไม่ติ๊กอะไรเลย = ไม่เทรดในสภาพนั้น")}</div>
         {Object.keys(REGIME).map((rg) => (
           <fieldset key={rg} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '10px 14px', margin: 0 }}>
             <legend><b>{REGIME[rg]}</b> <span className="mute">· {REGIME_HINT[rg]}</span></legend>
@@ -558,16 +563,16 @@ export default function Page() {
             })}
           </fieldset>
         ))}
-        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { map: mapDraft }))}>บันทึกกลยุทธ์</button></div>}
+        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', { map: mapDraft }))}>{tx("บันทึกกลยุทธ์")}</button></div>}
       </section>}
 
       {grid && <section className="card">
-        <h2>โปรไฟล์กริดสำหรับ EA กริด</h2>
-        <div className="mute">AI ระบุสภาพตลาด แล้ว EA กริด (Terravolteco SmartGold) จะดึงโปรไฟล์ของสภาพนั้นไปตั้งค่าตัวเองอัตโนมัติ ค่าถูกจำกัดเพดานทั้งฝั่งเซิร์ฟเวอร์และใน EA โปรไฟล์ที่ปิดทั้ง Buy/Sell = หยุดเปิดชุดใหม่ (ชุดที่เปิดอยู่ยังจัดการต่อ โดย Max ไม้ที่ต่ำจะหยุดการถัวเพิ่ม)</div>
+        <h2>{tx("โปรไฟล์กริดสำหรับ EA กริด")}</h2>
+        <div className="mute">AI {tx("ระบุสภาพตลาด แล้ว EA กริด (Terravolteco SmartGold) จะดึงโปรไฟล์ของสภาพนั้นไปตั้งค่าตัวเองอัตโนมัติ ค่าถูกจำกัดเพดานทั้งฝั่งเซิร์ฟเวอร์และใน EA โปรไฟล์ที่ปิดทั้ง Buy/Sell = หยุดเปิดชุดใหม่ (ชุดที่เปิดอยู่ยังจัดการต่อ โดย Max ไม้ที่ต่ำจะหยุดการถัวเพิ่ม)")}</div>
         <div className="row">
-          <label className="sub" htmlFor="gscope" style={{ minWidth: 130 }}>ตั้งค่าสำหรับ</label>
+          <label className="sub" htmlFor="gscope" style={{ minWidth: 130 }}>{tx("ตั้งค่าสำหรับ")}</label>
           <select id="gscope" value={gscope} onChange={(e) => pickScope(e.target.value)}>
-            <option value="">ทุกคู่ (ค่าร่วม)</option>
+            <option value="">{tx("ทุกคู่ (ค่าร่วม)")}</option>
             {gScopes.map((k) => <option key={k} value={k}>{gName(k)}{symGrid[k] ? ' ★ ตั้งเฉพาะแล้ว' : ' (ใช้ค่าร่วมอยู่)'}</option>)}
           </select>
           {gscope && <span className="mute">{symGrid[gscope] ? `${gName(gscope)} ใช้ชุดของตัวเอง` : `${gName(gscope)} ยังใช้ค่าร่วม แก้แล้วกดบันทึกเพื่อแยกเป็นของคู่นี้`}</span>}
@@ -581,7 +586,7 @@ export default function Page() {
           </div>
         ))}
         <div className="tblwrap"><table>
-          <thead><tr><th>โปรไฟล์</th><th>Buy</th><th>Sell</th>{GRID_COLS.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
+          <thead><tr><th>{tx("โปรไฟล์")}</th><th>Buy</th><th>Sell</th>{GRID_COLS.map(([, label]) => <th key={label}>{label}</th>)}</tr></thead>
           <tbody>
             {Object.values(grid.profiles).map((pf: any) => (
               <tr key={pf.id}>
@@ -597,68 +602,68 @@ export default function Page() {
             ))}
           </tbody>
         </table></div>
-        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', gscope ? { symGrid: { ...symGrid, [gscope]: { profiles: grid.profiles, map: grid.map } } } : { gridProfiles: grid.profiles, gridMap: grid.map }))}>{gscope ? `บันทึกให้ ${gName(gscope)}` : 'บันทึกโปรไฟล์กริด (ค่าร่วม)'}</button>
-          {gscope && symGrid[gscope] && <button className="btn" disabled={busy} onClick={() => { if (!window.confirm(`ลบชุดเฉพาะของ ${gName(gscope)} แล้วกลับไปใช้ค่าร่วม?`)) return; const rest = { ...symGrid }; delete rest[gscope]; act(async () => { await api('/api/settings', { symGrid: rest }); pickScope(''); }); }}>ลบชุดเฉพาะ ใช้ค่าร่วม</button>}
+        {isAdmin && <div className="row"><button className="btn main" disabled={busy} onClick={() => act(() => api('/api/settings', gscope ? { symGrid: { ...symGrid, [gscope]: { profiles: grid.profiles, map: grid.map } } } : { gridProfiles: grid.profiles, gridMap: grid.map }))}>{gscope ? `บันทึกให้ ${gName(gscope)}` : tx('บันทึกโปรไฟล์กริด (ค่าร่วม)')}</button>
+          {gscope && symGrid[gscope] && <button className="btn" disabled={busy} onClick={() => { if (!window.confirm(`ลบชุดเฉพาะของ ${gName(gscope)} แล้วกลับไปใช้ค่าร่วม?`)) return; const rest = { ...symGrid }; delete rest[gscope]; act(async () => { await api('/api/settings', { symGrid: rest }); pickScope(''); }); }}>{tx("ลบชุดเฉพาะ ใช้ค่าร่วม")}</button>}
         </div>}
       </section>}
 
       <section className="card">
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2>คิวคำสั่งส่งเข้า EA</h2>
-          <button className="btn" disabled={busy} onClick={() => { if (!window.confirm('ล้างประวัติคำสั่งที่เสร็จ/ล้มเหลว/ถูกบล็อกทั้งหมด? (คำสั่งที่ยังรอส่งหรือกำลังส่งจะไม่ถูกลบ)')) return; act(async () => { const r = await api('/api/orders', undefined, 'DELETE'); setMMsg(`ล้างประวัติแล้ว ${r.removed} รายการ`); }); }}>🗑 ล้างประวัติ</button>
+          <h2>{tx("คิวคำสั่งส่งเข้า EA")}</h2>
+          <button className="btn" disabled={busy} onClick={() => { if (!window.confirm(tx('ล้างประวัติคำสั่งที่เสร็จ/ล้มเหลว/ถูกบล็อกทั้งหมด? (คำสั่งที่ยังรอส่งหรือกำลังส่งจะไม่ถูกลบ)'))) return; act(async () => { const r = await api('/api/orders', undefined, 'DELETE'); setMMsg(`ล้างประวัติแล้ว ${r.removed} รายการ`); }); }}>🗑 ล้างประวัติ</button>
         </div>
         <div className="tblwrap"><table>
-          <thead><tr><th>เวลา</th><th>Symbol</th><th>ทิศทาง</th><th>ล็อต</th><th>ที่มา</th><th>สถานะ</th></tr></thead>
+          <thead><tr><th>{tx("เวลา")}</th><th>Symbol</th><th>{tx("ทิศทาง")}</th><th>{tx("ล็อต")}</th><th>{tx("ที่มา")}</th><th>{tx("สถานะ")}</th></tr></thead>
           <tbody>
             {(data?.cmds ?? []).map((c: any) => (
               <tr key={c.id}>
                 <td>{new Date(c.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                 <td>{c.symbol}</td><td className={c.side === 'BUY' ? 'buy' : 'sell'}>{c.side}</td><td>{c.lot}</td>
-                <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? 'สั่งเอง' : c.source === 'snipe' ? 'สไนเปอร์' : 'Webhook'}</td>
+                <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? tx('สั่งเอง') : c.source === 'snipe' ? tx('สไนเปอร์') : 'Webhook'}</td>
                 <td>{STATUS[c.status]}{c.note ? <div className="mute">{c.note}</div> : null}</td>
               </tr>
             ))}
-            {!data?.cmds?.length && <tr><td colSpan={6} className="mute">ยังไม่มีคำสั่ง ส่ง webhook ทดสอบตามคู่มือใน README</td></tr>}
+            {!data?.cmds?.length && <tr><td colSpan={6} className="mute">{tx("ยังไม่มีคำสั่ง ส่ง webhook ทดสอบตามคู่มือใน README")}</td></tr>}
           </tbody>
         </table></div>
       </section>
 
       {isAdmin && <section className="card">
-        <h2>ผู้ใช้งาน</h2>
-        <div className="mute">ผู้ใช้ 1 คน = บัญชีเทรด MT5 1 บัญชี = EA 1 ตัว ระบบสร้างให้ 2 อย่าง คือ รหัสผ่านเข้าเว็บ และ EA key (ใส่ที่ช่อง AI_EAKey ใน EA) EA key ใช้ได้กับเลขบัญชีที่ผูกไว้เท่านั้น ออเดอร์ ประวัติ และการวิเคราะห์ของแต่ละคนแยกกัน ผู้ใช้เห็นเฉพาะบัญชีของตัวเอง ทั้งสองรหัสแสดงครั้งเดียว (ถ้าหายให้กดรีเซ็ต)</div>
+        <h2>{tx("ผู้ใช้งาน")}</h2>
+        <div className="mute">{tx("ผู้ใช้ 1 คน = บัญชีเทรด MT5 1 บัญชี = EA 1 ตัว ระบบสร้างให้ 2 อย่าง คือ รหัสผ่านเข้าเว็บ และ EA key (ใส่ที่ช่อง AI_EAKey ใน EA) EA key ใช้ได้กับเลขบัญชีที่ผูกไว้เท่านั้น ออเดอร์ ประวัติ และการวิเคราะห์ของแต่ละคนแยกกัน ผู้ใช้เห็นเฉพาะบัญชีของตัวเอง ทั้งสองรหัสแสดงครั้งเดียว (ถ้าหายให้กดรีเซ็ต)")}</div>
         <div className="row">
-          <label className="sub" htmlFor="nu">ชื่อผู้ใช้</label>
-          <input id="nu" value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} placeholder="เช่น สมชาย" />
-          <label className="sub" htmlFor="nl">เลขบัญชี MT5</label>
-          <input id="nl" inputMode="numeric" value={newLogin} maxLength={12} onChange={(e) => setNewLogin(e.target.value.replace(/\D/g, ''))} placeholder="เช่น 3030514" />
-          <button className="btn main" disabled={busy || !newName.trim() || newLogin.length < 4} onClick={() => userAct({ action: 'create', name: newName, login: newLogin })}>สร้างบัญชีผู้ใช้</button>
+          <label className="sub" htmlFor="nu">{tx("ชื่อผู้ใช้")}</label>
+          <input id="nu" value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} placeholder={tx("เช่น สมชาย")} />
+          <label className="sub" htmlFor="nl">{tx("เลขบัญชี MT5")}</label>
+          <input id="nl" inputMode="numeric" value={newLogin} maxLength={12} onChange={(e) => setNewLogin(e.target.value.replace(/\D/g, ''))} placeholder={tx("เช่น 3030514")} />
+          <button className="btn main" disabled={busy || !newName.trim() || newLogin.length < 4} onClick={() => userAct({ action: 'create', name: newName, login: newLogin })}>{tx("สร้างบัญชีผู้ใช้")}</button>
         </div>
         {issued && <div className="bubble ai" role="status">
-          <div className="mute">ข้อมูลของ {issued.name}{issued.login ? ` (MT5 ${issued.login})` : ''} แสดงครั้งเดียว</div>
-          {issued.password && <><div className="mute">รหัสผ่านเข้าเว็บ</div><div style={{ fontFamily: 'monospace', fontSize: 18, margin: '4px 0 8px', wordBreak: 'break-all', userSelect: 'all' }}>{issued.password}</div></>}
+          <div className="mute">{tx("ข้อมูลของ")} {issued.name}{issued.login ? ` (MT5 ${issued.login})` : ''} {tx("แสดงครั้งเดียว")}</div>
+          {issued.password && <><div className="mute">{tx("รหัสผ่านเข้าเว็บ")}</div><div style={{ fontFamily: 'monospace', fontSize: 18, margin: '4px 0 8px', wordBreak: 'break-all', userSelect: 'all' }}>{issued.password}</div></>}
           {issued.eaKey && <><div className="mute">EA key (ใส่ที่ AI_EAKey ใน EA)</div><div style={{ fontFamily: 'monospace', fontSize: 16, margin: '4px 0 8px', wordBreak: 'break-all', userSelect: 'all' }}>{issued.eaKey}</div></>}
-          <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? 'คัดลอกแล้ว' : 'คัดลอกข้อความส่งให้ผู้ใช้'}</button><button className="btn" onClick={() => setIssued(null)}>ปิด</button></div>
+          <div className="row"><button className="btn main" onClick={copyIssued}>{copied ? tx('คัดลอกแล้ว') : tx('คัดลอกข้อความส่งให้ผู้ใช้')}</button><button className="btn" onClick={() => setIssued(null)}>{tx('ปิดหน้าต่าง')}</button></div>
         </div>}
         <div className="tblwrap"><table>
-          <thead><tr><th>ชื่อ</th><th>บัญชี MT5</th><th>สิทธิ์ใช้ระบบ</th><th>EA ส่งข้อมูลล่าสุด</th><th>AI key ของเขา</th><th>เข้าเว็บล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>{tx("ชื่อ")}</th><th>{tx("บัญชี MT5")}</th><th>{tx("สิทธิ์ใช้ระบบ")}</th><th>EA ส่งข้อมูลล่าสุด</th><th>AI key ของเขา</th><th>{tx("เข้าเว็บล่าสุด")}</th><th></th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
-                <td>{u.login || <span className="mute">ยังไม่ผูก</span>}</td>
-                <td><select aria-label={`สิทธิ์ใช้ระบบของ ${u.name}`} disabled={busy} value={u.systems?.sg === false ? 'sr' : u.systems?.sr === false ? 'sg' : 'both'} onChange={(e) => userAct({ action: 'systems', id: u.id, sg: e.target.value !== 'sr', sr: e.target.value !== 'sg' })}><option value="both">ทั้งสองระบบ</option><option value="sg">SmartGold เท่านั้น</option><option value="sr">SR Breakout เท่านั้น</option></select></td>
+                <td>{u.login || <span className="mute">{tx("ยังไม่ผูก")}</span>}</td>
+                <td><select aria-label={`สิทธิ์ใช้ระบบของ ${u.name}`} disabled={busy} value={u.systems?.sg === false ? 'sr' : u.systems?.sr === false ? 'sg' : 'both'} onChange={(e) => userAct({ action: 'systems', id: u.id, sg: e.target.value !== 'sr', sr: e.target.value !== 'sg' })}><option value="both">{tx("ทั้งสองระบบ")}</option><option value="sg">SmartGold เท่านั้น</option><option value="sr">SR Breakout เท่านั้น</option></select></td>
                 <td>{u.eaSeen ? new Date(u.eaSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
-                <td>{u.aiKey ? <span className="chip ok">ใส่แล้ว</span> : <span className="mute">ยังไม่ใส่</span>}</td>
+                <td>{u.aiKey ? <span className="chip ok">{tx("ใส่แล้ว")}</span> : <span className="mute">{tx("ยังไม่ใส่")}</span>}</td>
                 <td>{u.lastSeen ? new Date(u.lastSeen).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</td>
                 <td><div className="row">
-                  <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>รีเซ็ตรหัสเว็บ</button>
-                  {u.login && <button className="btn" disabled={busy} onClick={() => { if (confirm(`สร้าง EA key ใหม่ให้ ${u.name}? key เดิมจะใช้ไม่ได้ทันที`)) userAct({ action: 'resetKey', id: u.id }); }}>รีเซ็ต EA key</button>}
-                  <button className="btn" disabled={busy} onClick={() => { const l = (prompt(`เลขบัญชี MT5 ของ ${u.name}`, u.login || '') || '').replace(/\D/g, ''); if (l.length >= 4) userAct({ action: 'bind', id: u.id, login: l }); }}>{u.login ? 'เปลี่ยนเลขบัญชี' : 'ผูกบัญชี'}</button>
-                  <button className="btn warn" disabled={busy} onClick={() => { if (confirm(`ลบผู้ใช้ ${u.name}?`)) userAct({ action: 'delete', id: u.id }); }}>ลบ</button>
+                  <button className="btn" disabled={busy} onClick={() => userAct({ action: 'reset', id: u.id })}>{tx("รีเซ็ตรหัสเว็บ")}</button>
+                  {u.login && <button className="btn" disabled={busy} onClick={() => { if (confirm(`สร้าง EA key ใหม่ให้ ${u.name}? key เดิมจะใช้ไม่ได้ทันที`)) userAct({ action: 'resetKey', id: u.id }); }}>{tx("รีเซ็ต EA key")}</button>}
+                  <button className="btn" disabled={busy} onClick={() => { const l = (prompt(`เลขบัญชี MT5 ของ ${u.name}`, u.login || '') || '').replace(/\D/g, ''); if (l.length >= 4) userAct({ action: 'bind', id: u.id, login: l }); }}>{u.login ? tx('เปลี่ยนเลขบัญชี') : tx('ผูกบัญชี')}</button>
+                  <button className="btn warn" disabled={busy} onClick={() => { if (confirm(`ลบผู้ใช้ ${u.name}?`)) userAct({ action: 'delete', id: u.id }); }}>{tx("ลบ")}</button>
                 </div></td>
               </tr>
             ))}
-            {!users.length && <tr><td colSpan={7} className="mute">ยังไม่มีผู้ใช้</td></tr>}
+            {!users.length && <tr><td colSpan={7} className="mute">{tx("ยังไม่มีผู้ใช้")}</td></tr>}
           </tbody>
         </table></div>
       </section>}
@@ -688,7 +693,7 @@ function FloatOrb({ mode, onTap, onClose }: { mode: Mode; onTap: () => void; onC
     if (d.moved) { try { localStorage.setItem('orbpos', JSON.stringify(d.last)); } catch {} } else onTap();
   };
   return (
-    <div className="orb-float" style={{ left: pos.x, top: pos.y }} role="button" tabIndex={0} aria-label="ลูกกลม AI: แตะเพื่อคุย ลากเพื่อย้าย"
+    <div className="orb-float" style={{ left: pos.x, top: pos.y }} role="button" tabIndex={0} aria-label={tx("ลูกกลม AI: แตะเพื่อคุย ลากเพื่อย้าย")}
       onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; }}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); } }}>
       <div className={'orb-wrap ' + mode}><div className="orb-glow" /><div className="orb-wave" /><div className="orb-wave w2" /><div className="orb-ring" /><div className="orb-core" /></div>

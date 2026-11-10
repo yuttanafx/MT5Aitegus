@@ -1,7 +1,8 @@
 'use client';
 import { ema, type Bar } from '@/lib/chart';
+import { tp, tx, useLang } from '@/lib/i18n';
 
-const REGIME_TH: Record<string, string> = { trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' };
+const REGIME_TH: Record<string, string> = tp({ trend_up: 'แนวโน้มขาขึ้น', trend_down: 'แนวโน้มขาลง', range: 'ไซด์เวย์', volatile: 'ผันผวน', news: 'ช่วงข่าว' });
 const REGIME_COLOR: Record<string, string> = { trend_up: 'var(--up)', trend_down: 'var(--down)', range: 'var(--accent)', volatile: 'var(--warn)', news: 'var(--warn)' };
 
 // Candlestick chart drawn from the candles the EA sends (broker data), with EMA20 / EMA50 and the current regime.
@@ -21,13 +22,13 @@ export default function ChartCard({ chart, symbol, tf, regime }: { chart: { ts: 
   const last = bars[bars.length - 1], lastC = last[4];
   const ageMin = Math.max(0, Math.round((Date.now() - chart.ts) / 60_000));
   const digits = lastC >= 100 ? 2 : 5;
-  const summary = `${symbol} ${tf} แท่งล่าสุดปิดที่ ${lastC.toFixed(digits)} สภาพตลาด ${regime ? REGIME_TH[regime] ?? regime : 'ยังไม่ระบุ'} ข้อมูลอายุ ${ageMin} นาที`;
+  const summary = `${symbol} ${tf} แท่งล่าสุดปิดที่ ${lastC.toFixed(digits)} สภาพตลาด ${regime ? REGIME_TH[regime] ?? regime : tx('ยังไม่ระบุ')} ข้อมูลอายุ ${ageMin} นาที`;
   const rc = regime ? REGIME_COLOR[regime] ?? 'var(--mute)' : 'var(--mute)';
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => lo - pad + (hi - lo + pad * 2) * t);
 
   return (
     <section className="card">
-      <h2>กราฟจาก EA <span className="mute">{symbol} · {tf} · ข้อมูลเมื่อ {ageMin} นาทีที่แล้ว</span></h2>
+      <h2>{tx("กราฟจาก EA")} <span className="mute">{symbol} · {tf} · {tx("ข้อมูลเมื่อ")} {ageMin} {tx("นาทีที่แล้ว")}</span></h2>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={summary} style={{ width: '100%', height: 'auto' }}>
         <title>{summary}</title>
         <rect x={PL} y={PT} width={W - PL - PR} height={H - PT - PB} fill={rc} opacity={0.06} />
@@ -51,7 +52,7 @@ export default function ChartCard({ chart, symbol, tf, regime }: { chart: { ts: 
         <line x1={PL} x2={W - PR} y1={y(lastC)} y2={y(lastC)} stroke={rc} strokeDasharray="4 3" strokeWidth={1} />
         <rect x={W - PR + 2} y={y(lastC) - 9} width={PR - 4} height={18} rx={4} fill={rc} />
         <text x={W - PR + 6} y={y(lastC) + 4} fontSize={11} fontWeight={700} fill="var(--bg)">{lastC.toFixed(digits)}</text>
-        <text x={PL + 4} y={20} fontSize={13} fontWeight={700} fill={rc}>{regime ? REGIME_TH[regime] ?? regime : 'ยังไม่ระบุสภาพตลาด'}</text>
+        <text x={PL + 4} y={20} fontSize={13} fontWeight={700} fill={rc}>{regime ? REGIME_TH[regime] ?? regime : tx('ยังไม่ระบุสภาพตลาด')}</text>
         <text x={PL + 170} y={20} fontSize={11} fill="var(--accent)">— EMA20</text>
         <text x={PL + 232} y={20} fontSize={11} fill="var(--warn)">— EMA50</text>
       </svg>
