@@ -97,6 +97,11 @@ bool AI_Request(const string body, string &resp)
    string headers = "Content-Type: application/json\r\nx-api-key: " + AI_EAKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    ResetLastError();
    int code = WebRequest("POST", AI_Url + "/api/ea/grid", headers, 8000, post, res, rh);
+   if(code == 402)
+   {
+      aiStatus = "AI: subscription expired - renew on the website";
+      return false;
+   }
    if(code != 200)
    {
       aiStatus = "AI: request failed (HTTP " + IntegerToString(code) + ", err " + IntegerToString(GetLastError()) + ") - keeping current settings";

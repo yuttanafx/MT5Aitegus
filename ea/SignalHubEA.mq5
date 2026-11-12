@@ -45,6 +45,8 @@ string Http(string method, string path, string body, int &code)
    ResetLastError();
    code = WebRequest(method, ServerUrl + path, headers, 8000, data, result, rh);
    if(code == -1) Print("WebRequest error ", GetLastError(), " - is the URL allowed in Options?");
+   if(code == 402) Comment("SignalHub: subscription expired - renew on the website (no orders are received)");
+   else if(code == 200) Comment("");
    return CharArrayToString(result, 0, WHOLE_ARRAY, CP_UTF8);
 }
 

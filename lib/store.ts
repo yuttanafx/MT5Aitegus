@@ -69,6 +69,7 @@ export async function addCmd(p: Pick<Cmd, 'symbol' | 'side' | 'lot' | 'sl' | 'tp
   const cmds = await getCmds(acct);
   const settings = await getSettings();
   let reason: string | null = settings.paused ? 'ระบบถูกหยุดชั่วคราว' : null;
+  if (!reason && acct !== 'main') { try { const { acctActive, EXPIRED_MSG } = await import('./billing'); if (!(await acctActive(acct))) reason = EXPIRED_MSG; } catch {} } // expired member: no new orders from webhook / AI / dashboard
   if (!reason) { // news guard: no NEW orders around high-impact news (fail-open: a calendar problem never blocks order intake)
     try { const { newsFor, newsText } = await import('./news'); const n = await newsFor(p.symbol, settings); if (n.active) reason = newsText(n); } catch {}
   }

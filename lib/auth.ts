@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'crypto';
 import { every, getJSON, getUsers } from './store';
+import { EXPIRED_MSG, getBillCfg, subOf } from './billing';
 import type { User } from './types';
 function eq(a: string | null | undefined, b: string | undefined) {
   if (!a || !b) return false;
@@ -34,7 +35,9 @@ export async function pickAcct(r: Request, me: Who): Promise<string> {
 // EA authentication. The legacy EA_API_KEY = the main account. A per-account EA key is bound to ONE MT5 account number:
 // the EA also sends x-account (its AccountInfoInteger(ACCOUNT_LOGIN)) and it must match.
 export type EAAuth = { ok: true; acct: string; login?: string; name: string } | { ok: false; status: number; msg: string };
-export async function eaAuth(r: Request): Promise<EAAuth> {
+// opts.allowExpired: only /api/ea/license sets it, so an EA whose subscription ran out can still ask "am I licensed?" and show why.
+// Every other EA route gets 402 for an expired member, so an expired EA receives no orders, no AI profile, no web switch: nothing.
+export async function eaAuth(r: Request, opts?: { allowExpired?: boolean }): Promise<EAAuth> {
   const key = (r.headers.get('x-api-key') || '').trim();   // pasted keys often carry a trailing space / newline
   if (!key) return { ok: false, status: 401, msg: 'unauthorized: no EA key was sent (the key field in the EA is empty)' };
   if (eq(key, process.env.EA_API_KEY)) return { ok: true, acct: 'main', name: 'Main' };
@@ -46,6 +49,7 @@ export async function eaAuth(r: Request): Promise<EAAuth> {
   if (!u) return { ok: false, status: 401, msg: 'unauthorized: EA key not recognised (check for spaces or typos, or the key was reset or replaced)' };
   const login = (r.headers.get('x-account') || '').replace(/\D/g, '');
   if (u.login && login !== u.login) return { ok: false, status: 403, msg: 'account mismatch: this EA key belongs to a different MT5 account' };
+  if (!opts?.allowExpired && !subOf(u, await getBillCfg()).active) return { ok: false, status: 402, msg: EXPIRED_MSG };
   return { ok: true, acct: u.id, login: u.login, name: u.name };
 }
 
