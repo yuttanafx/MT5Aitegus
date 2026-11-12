@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { pickAcct, who } from '@/lib/auth';
+import { acctActive, EXPIRED_MSG } from '@/lib/billing';
 import { addCmd, ak, getCmds, getJSON, saveCmds } from '@/lib/store';
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
   const me = await who(req);
   if (!me) return Response.json({ error: 'unauthorized' }, { status: 401 });
   const acct = await pickAcct(req, me);
+  if (!(await acctActive(acct))) return Response.json({ error: EXPIRED_MSG }, { status: 402 });
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return Response.json({ error: 'ข้อมูลไม่ถูกต้อง (ต้องมี BUY/SELL และ lot > 0)' }, { status: 400 });
   const dec = await getJSON<any>(ak('decision', acct), null);

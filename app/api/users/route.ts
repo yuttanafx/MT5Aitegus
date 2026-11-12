@@ -4,6 +4,7 @@ import { hashPw, who } from '@/lib/auth';
 import { ak, getJSON, getUsers, saveUsers } from '@/lib/store';
 import { hasOwnKey } from '@/lib/aiconf';
 import type { User } from '@/lib/types';
+import { DAY, ensureRefCode, getBillCfg, getPayments, refStats, subOf } from '@/lib/billing';
 export const dynamic = 'force-dynamic';
 
 // One user = one MT5 trading account = one EA key.
@@ -20,9 +21,10 @@ const newPassword = () => randomBytes(12).toString('base64url');          // 16 
 const newEAKey = () => 'ea_' + randomBytes(18).toString('base64url');     // shown once, stored only as a hash
 
 async function pub(users: User[]) {
+  const [cfg, pays] = await Promise.all([getBillCfg(), getPayments()]);
   return Promise.all(users.map(async (u) => {
     const seen = await getJSON<{ ts: number } | null>(ak('seen', u.id), null);
-    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, systems: { sg: u.systems?.sg !== false, sr: u.systems?.sr !== false }, aiKey: await hasOwnKey(u.id), createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts };
+    return { id: u.id, name: u.name, login: u.login ?? '', hasKey: !!u.keyHash, systems: { sg: u.systems?.sg !== false, sr: u.systems?.sr !== false }, aiKey: await hasOwnKey(u.id), createdAt: u.createdAt, lastSeen: u.lastSeen, eaSeen: seen?.ts, sub: subOf(u, cfg), free: !!u.free, refCode: u.refCode ?? '', refBy: users.find((x) => x.id === u.refBy)?.name ?? '', refPct: typeof u.refPct === 'number' ? u.refPct : null, ref: refStats(users, pays, u) };
   }));
 }
 
@@ -45,7 +47,11 @@ export async function POST(req: Request) {
     if (taken(login)) return Response.json({ error: 'เลขบัญชีนี้ผูกกับผู้ใช้อื่นอยู่แล้ว' }, { status: 400 });
     if (users.length >= 50) return Response.json({ error: 'ผู้ใช้เต็ม 50 คนแล้ว' }, { status: 400 });
     const password = newPassword(), eaKey = newEAKey();
-    users.push({ id: randomUUID().slice(0, 8), name, hash: hashPw(password), createdAt: Date.now(), login, keyHash: hashPw(eaKey) });
+    const nu: User = { id: randomUUID().slice(0, 8), name, hash: hashPw(password), createdAt: Date.now(), login, keyHash: hashPw(eaKey) };
+    const cfg = await getBillCfg();
+    if (cfg.trialDays > 0) nu.expiresAt = Date.now() + cfg.trialDays * DAY;
+    ensureRefCode(users, nu);
+    users.push(nu);
     await saveUsers(users);
     return Response.json({ name, login, password, eaKey, users: await pub(users) });
   }

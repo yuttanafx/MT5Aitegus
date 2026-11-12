@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import NewsCard from '@/components/NewsCard';
 import ChartCard from '@/components/ChartCard';
 import Landing from '@/components/Landing';
+import { AdminBilling, MemberBilling, RegisterCard } from '@/components/Billing';
 import { LangBtn, tp, tx, useLang } from '@/lib/i18n';
 
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
@@ -340,6 +341,7 @@ export default function Page() {
             </div>
           ))}
         </div>
+        <RegisterCard onLogin={loginWith} />
       </Landing>
     );
   }
@@ -365,6 +367,7 @@ export default function Page() {
         </div>
       </div>
       {err && <div className="err" role="alert">{err}</div>}
+      {!isAdmin && data?.me && <MemberBilling api={api} />}
 
       <section className="card" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 28, alignItems: 'center' }}>
         <div className="orbbox"><div className={'orb-wrap ' + mode}>
@@ -628,6 +631,7 @@ export default function Page() {
         </table></div>
       </section>
 
+      {isAdmin && acct === 'main' && <AdminBilling api={api} />}
       {isAdmin && <section className="card">
         <h2>{tx("ผู้ใช้งาน")}</h2>
         <div className="mute">{tx("ผู้ใช้ 1 คน = บัญชีเทรด MT5 1 บัญชี = EA 1 ตัว ระบบสร้างให้ 2 อย่าง คือ รหัสผ่านเข้าเว็บ และ EA key (ใส่ที่ช่อง AI_EAKey ใน EA) EA key ใช้ได้กับเลขบัญชีที่ผูกไว้เท่านั้น ออเดอร์ ประวัติ และการวิเคราะห์ของแต่ละคนแยกกัน ผู้ใช้เห็นเฉพาะบัญชีของตัวเอง ทั้งสองรหัสแสดงครั้งเดียว (ถ้าหายให้กดรีเซ็ต)")}</div>
