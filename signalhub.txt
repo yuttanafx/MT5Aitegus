@@ -32,7 +32,7 @@
 
 
 //--- [HIDDEN CONFIGURATION]
-string EXPIRY_DATE = "2026.12.21"; 
+// EXPIRY_DATE removed: the subscription on the Signal Hub server decides how long this EA may open new orders
 
 //--- [USER INPUTS: ตั้งค่าได้จากหน้าต่าง Inputs]
 input double InpMaxLot          = 1.00;    // Max Lot ต่อไม้ (เพดานลอทสูงสุด)
@@ -141,6 +141,8 @@ void AI_PollCmd();   // defined after the licence block (it needs licOk)
 uint aiLastCmdPoll = 0;
 
 bool     aiOn = true;
+bool     licOk = true;          // subscription / licence: false = no NEW orders (open baskets are still managed and closed normally)
+string   licMsg = "LIC: checking...";
 bool     g_sysOn = true;   // web switch (Signal Hub dashboard): false = this system opens NO new orders (open baskets are still managed and closed)
 int      aiH_adx = INVALID_HANDLE, aiH_rsi = INVALID_HANDLE, aiH_atr = INVALID_HANDLE, aiH_e20 = INVALID_HANDLE, aiH_e50 = INVALID_HANDLE;
 datetime aiLastPush = 0;
@@ -232,6 +234,7 @@ bool AI_Request(const string body, string &resp)
    string headers = "Content-Type: application/json\r\nx-api-key: " + AI_EAKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    ResetLastError();
    int code = WebRequest("POST", AI_Url + "/api/ea/grid", headers, 8000, post, res, rh);
+   if(code == 402) { licOk = false; licMsg = "LIC: subscription expired - renew on the website"; }   // server says: unpaid
    if(code != 200)
    {
       aiStatus = "AI: request failed (HTTP " + IntegerToString(code) + ", err " + IntegerToString(GetLastError()) + ") - keeping current settings";
@@ -337,142 +340,38 @@ void AI_OnTick()
 
 //==================== end of AI module ====================
 
-//==================== Remote licence: Google Sheet (account whitelist) ====================
-// Sheet layout (first tab):  A = account number | B = expiry yyyy-mm-dd (optional) | C = ON/OFF (optional, blank = ON) | D = name/note
-// Share the sheet as "Anyone with the link: Viewer". Users must allow https://docs.google.com in Tools > Options > Expert Advisors > Allow WebRequest.
-string LIC_SheetUrl     = "https://docs.google.com/spreadsheets/d/1YKipAKASdCaLQjeCTT2PDRxdMOP4MklegNnfaxE4oNA/gviz/tq?tqx=out:csv&gid=0";
-int    LIC_CheckMinutes = 30;   // how often the sheet is re-read while the EA runs
-int    LIC_GraceHours   = 24;   // if the sheet cannot be reached, keep trading on the last good answer for this long
+//==================== Remote licence: Signal Hub subscription (server decides) ====================
+// The EA asks <AI_Url>/api/ea/license with its EA key + MT5 account number. ok=1 -> trading allowed, ok=0 -> subscription expired.
+// Prices, days and who may use the EA are set in the web dashboard (admin). Nothing to edit here.
+int    LIC_CheckMinutes = 30;   // how often the server is asked while the licence is OK
+int    LIC_RetryMinutes = 2;    // how often while it is OFF, so a renewed member is unlocked within minutes without reloading the EA
+int    LIC_GraceHours   = 24;   // if the server cannot be reached, keep trading on the last good answer for this long
 
-bool     licOk = true;          // false = no NEW orders (open baskets are still managed and closed normally)
 datetime licLastCheck = 0;
-string   licMsg = "LIC: checking...";
 string   licGV = "TVE_LIC_OK_" + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN));
 
-bool LIC_Fetch(string &csv)
+// 1 = allowed, 0 = denied (expired / wrong key), -1 = could not reach the server (licMsg explains)
+int LIC_Query()
 {
    char post[], res[];
    string rh;
+   string headers = "x-api-key: " + AI_EAKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    ResetLastError();
-   int code = WebRequest("GET", LIC_SheetUrl, "", 8000, post, res, rh);
-   if(code != 200)
+   int code = WebRequest("GET", AI_Url + "/api/ea/license", headers, 8000, post, res, rh);
+   if(code == -1) { licMsg = "LIC: cannot reach server (err " + IntegerToString(GetLastError()) + ") - add AI_Url to Allow WebRequest"; return -1; }
+   if(code == 401 || code == 403) { licMsg = "LIC: EA key wrong / not for this MT5 account"; return 0; }
+   if(code != 200) { licMsg = "LIC: server error HTTP " + IntegerToString(code); return -1; }
+   string L[];
+   int n = StringSplit(CharArrayToString(res, 0, WHOLE_ARRAY, CP_UTF8), '\n', L);
+   for(int i = 0; i < n; i++) { StringTrimLeft(L[i]); StringTrimRight(L[i]); }
+   if(AI_Get(L, n, "ok") == "1")
    {
-      licMsg = "LIC: sheet unreachable (HTTP " + IntegerToString(code) + ", err " + IntegerToString(GetLastError()) + ")";
-      if(code == -1) licMsg += " - add https://docs.google.com to Allow WebRequest";
-      return false;
-   }
-   csv = CharArrayToString(res, 0, WHOLE_ARRAY, CP_UTF8);
-   if(StringFind(csv, "<html") >= 0 || StringFind(csv, "<!DOCTYPE") >= 0)
-   {
-      licMsg = "LIC: sheet is not public (share = Anyone with the link: Viewer)";
-      return false;
-   }
-   return true;
-}
-
-int LIC_Cells(string line, string &c[])
-{
-   ArrayResize(c, 0);
-   string cur = "";
-   bool q = false;
-   int n = StringLen(line);
-   for(int i = 0; i < n; i++)
-   {
-      ushort ch = StringGetCharacter(line, i);
-      if(ch == '"') { q = !q; continue; }
-      if(ch == ',' && !q) { int k = ArraySize(c); ArrayResize(c, k + 1); c[k] = cur; cur = ""; continue; }
-      cur += ShortToString(ch);
-   }
-   int k2 = ArraySize(c);
-   ArrayResize(c, k2 + 1);
-   c[k2] = cur;
-   return ArraySize(c);
-}
-
-string LIC_Digits(string s)
-{
-   string o = "";
-   for(int i = 0; i < StringLen(s); i++)
-   {
-      ushort ch = StringGetCharacter(s, i);
-      if(ch >= '0' && ch <= '9') o += ShortToString(ch);
-   }
-   return o;
-}
-
-// Accepts yyyy-mm-dd (recommended), yyyy.mm.dd, yyyy/mm/dd, d/m/yyyy or m/d/yyyy (only when unambiguous),
-// a Sheets serial number (e.g. 46387), and Buddhist-era years (2569 -> 2026).
-bool LIC_ParseDate(string e, datetime &t)
-{
-   StringTrimLeft(e); StringTrimRight(e);
-   int sp = StringFind(e, " ");
-   if(sp > 0) e = StringSubstr(e, 0, sp);                       // drop a time part
-   StringReplace(e, "-", "."); StringReplace(e, "/", ".");
-
-   if(LIC_Digits(e) == e && StringLen(e) >= 5)                  // Sheets serial number: days since 1899-12-30
-   {
-      long sv = StringToInteger(e);
-      if(sv < 30000 || sv > 80000) return false;
-      t = (datetime)((sv - 25569) * 86400);
-      return true;
-   }
-
-   string p[];
-   if(StringSplit(e, '.', p) != 3) return false;
-   int y = 0, m = 0, d = 0;
-   if(StringLen(p[0]) == 4) { y = (int)StringToInteger(p[0]); m = (int)StringToInteger(p[1]); d = (int)StringToInteger(p[2]); }
-   else if(StringLen(p[2]) == 4)
-   {
-      int a = (int)StringToInteger(p[0]), b = (int)StringToInteger(p[1]);
-      y = (int)StringToInteger(p[2]);
-      if(a > 12)       { d = a; m = b; }
-      else if(b > 12)  { m = a; d = b; }
-      else if(a == b)  { d = a; m = b; }
-      else return false;                                        // 03/04/2026 is ambiguous: ask for yyyy-mm-dd
-   }
-   else return false;
-   if(y > 2400) y -= 543;
-   if(y < 2000 || m < 1 || m > 12 || d < 1 || d > 31) return false;
-   t = StringToTime(StringFormat("%04d.%02d.%02d", y, m, d));
-   return (t > 0);
-}
-
-// 1 = allowed, 0 = denied, -1 = account not in sheet (licMsg explains)
-int LIC_Evaluate(string csv)
-{
-   string acct = IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN));
-   string lines[];
-   int n = StringSplit(csv, '\n', lines);
-   for(int i = 0; i < n; i++)
-   {
-      string c[];
-      int k = LIC_Cells(lines[i], c);
-      if(k < 1 || LIC_Digits(c[0]) != acct) continue;
-
-      if(k >= 3)
-      {
-         string st = c[2];
-         StringTrimLeft(st); StringTrimRight(st); StringToUpper(st);
-         if(st == "OFF" || st == "NO" || st == "0" || st == "FALSE" || st == "BLOCK") { licMsg = "LIC: account disabled in sheet"; return 0; }
-      }
-      if(k >= 2)
-      {
-         string e = c[1];
-         StringTrimLeft(e); StringTrimRight(e);
-         if(e != "")
-         {
-            datetime exp;
-            if(!LIC_ParseDate(e, exp)) { licMsg = "LIC: bad expiry format '" + e + "' (use yyyy-mm-dd)"; return 0; }
-            if(TimeCurrent() > exp + 86399) { licMsg = "LIC: expired " + e; return 0; }
-            licMsg = "LIC: OK until " + e;
-            return 1;
-         }
-      }
-      licMsg = "LIC: OK (no expiry)";
+      string d = AI_Get(L, n, "days", "-1");
+      licMsg = (d == "-1") ? "LIC: OK (no expiry)" : "LIC: OK - " + d + " day(s) left";
       return 1;
    }
-   licMsg = "LIC: account " + acct + " is not in the sheet";
-   return -1;
+   licMsg = "LIC: " + AI_Get(L, n, "msg", "subscription expired - renew on the website");
+   return 0;
 }
 
 void LIC_ShowStatus()
@@ -486,8 +385,8 @@ void LIC_ShowStatus()
 void LIC_Check()
 {
    licLastCheck = TimeCurrent();
-   string csv;
-   if(!LIC_Fetch(csv))
+   int r = LIC_Query();
+   if(r == -1)
    {
       // network problem: keep working on the last good answer for a limited time
       if(GlobalVariableCheck(licGV) && (TimeCurrent() - (datetime)GlobalVariableGet(licGV)) <= LIC_GraceHours * 3600)
@@ -496,9 +395,9 @@ void LIC_Check()
    }
    else
    {
-      licOk = (LIC_Evaluate(csv) == 1);
+      licOk = (r == 1);
       if(licOk) GlobalVariableSet(licGV, (double)TimeCurrent());
-      else GlobalVariableDel(licGV);   // an explicit "no" from the sheet cancels the grace period
+      else GlobalVariableDel(licGV);   // an explicit "no" from the server cancels the grace period
    }
    LIC_ShowStatus();
 }
@@ -507,13 +406,13 @@ bool LIC_Init()
 {
    LIC_Check();
    if(!licOk) { Print(licMsg); Alert(licMsg); }
-   return licOk;
+   return true;   // stay loaded even when unpaid: the EA is locked (no new orders) and unlocks by itself after the member renews
 }
 
 void LIC_Tick()
 {
    if(MQLInfoInteger(MQL_TESTER)) return;
-   if(TimeCurrent() - licLastCheck < LIC_CheckMinutes * 60) return;
+   if(TimeCurrent() - licLastCheck < (licOk ? LIC_CheckMinutes : LIC_RetryMinutes) * 60) return;
    bool was = licOk;
    LIC_Check();
    if(was && !licOk) { Print(licMsg); Alert(licMsg); }
@@ -531,6 +430,7 @@ int AI_Call(const string method, const string path, const string body, string &r
    string headers = "Content-Type: application/json\r\nx-api-key: " + AI_EAKey + "\r\nx-account: " + IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)) + "\r\n";
    ResetLastError();
    int code = WebRequest(method, AI_Url + path, headers, timeoutMs, post, res, rh);
+   if(code == 402) { licOk = false; licMsg = "LIC: subscription expired - renew on the website"; }
    resp = (code == -1) ? "" : CharArrayToString(res, 0, WHOLE_ARRAY, CP_UTF8);
    return code;
 }
@@ -576,6 +476,7 @@ void AI_PollCmd()
       if(code == 200)                  aiStatus = "WEB: connected - waiting for orders";
       else if(code == -1)              aiStatus = "WEB: cannot reach site (err " + IntegerToString(werr) + ") - check Allow WebRequest + AI_Url";
       else if(code == 401 || code == 403) aiStatus = "WEB: EA key wrong / not for this MT5 account";
+      else if(code == 402)             aiStatus = "WEB: subscription expired - renew on the website";
       else                             aiStatus = "WEB: server error HTTP " + IntegerToString(code);
       AI_ShowStatus();
       if(code != 200) Print("SignalHub web orders: ", aiStatus);
@@ -2108,7 +2009,7 @@ void DrawDashboard() {
 //+------------------------------------------------------------------+
 int OnInit() {
     if(!MQLInfoInteger(MQL_TESTER) && !LIC_Init()) return(INIT_FAILED); // account check now comes from the Google Sheet
-    if(TimeCurrent() >= StringToTime(EXPIRY_DATE)) return(INIT_FAILED);
+    // (old hard-coded EXPIRY_DATE check removed: access is now controlled by the subscription on the server)
     trade.SetExpertMagicNumber(InpMagicNum);
     g_RecMult = InpRecMultiplier;   // รีเซ็ตตัวคูณ Recovery เป็นค่าจากอินพุตทุกครั้งที่โหลด EA
     DrawDashboard();
@@ -2197,8 +2098,8 @@ void OnChartEvent(const int id, const long &l, const double &d, const string &s)
         if(s=="TVE3_EMA") { UseEMA=!UseEMA; btnEMA.Description(UseEMA?"EMA Filter: ON":"EMA Filter: OFF"); btnEMA.BackColor(UseEMA?UI_BLUE:UI_GRAY); }
         if(s=="TVE3_AIBTN") AI_Toggle();
         if(s=="TVE3_RW") RW_Click(); // <<< Signal Hub AI
-        if(s=="TVE3_B") LogState("BUY NOW"); if(s=="TVE3_B") trade.Buy(GetSafeVal(ebLotB, 0.01), _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_ASK), 0, 0, "");
-        if(s=="TVE3_S") LogState("SELL NOW"); if(s=="TVE3_S") trade.Sell(GetSafeVal(ebLotS, 0.01), _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_BID), 0, 0, "");
+        if(s=="TVE3_B" && !licOk) Alert(licMsg); if(s=="TVE3_B" && licOk) LogState("BUY NOW"); if(s=="TVE3_B" && licOk) trade.Buy(GetSafeVal(ebLotB, 0.01), _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_ASK), 0, 0, "");
+        if(s=="TVE3_S" && !licOk) Alert(licMsg); if(s=="TVE3_S" && licOk) LogState("SELL NOW"); if(s=="TVE3_S" && licOk) trade.Sell(GetSafeVal(ebLotS, 0.01), _Symbol, SymbolInfoDouble(_Symbol, SYMBOL_BID), 0, 0, "");
         if(s=="TVE3_CB") ManualClose(0); if(s=="TVE3_CS") ManualClose(1); if(s=="TVE3_CA") ManualClose(-1);
         ChartRedraw();
     }
