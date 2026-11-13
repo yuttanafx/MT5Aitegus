@@ -8,6 +8,8 @@ import { getSnipe } from './snipe';
 import { aiPayload, getScan, mergeScan } from './scan';
 import { removePair, removeStale } from './pairs';
 import { esc, RTH, saveLinks, tgEdit, tgSend, type Kb, type NotifyEvt, type TgLink } from './telegram';
+import { explainNote } from './ordernote';
+import { sweepStale } from './easeen';
 
 // The button menus of the bot: main menu, trend analysis, EA settings, notifications, status, orders.
 // Every screen is edited IN PLACE (one message that changes as you tap) instead of piling up new messages.
@@ -67,10 +69,11 @@ export async function showStatus(chatId: string, me: Me, mid?: number) {
 }
 export async function showOrders(chatId: string, me: Me, mid?: number) {
   const [cmdsAll, snaps] = await Promise.all([getCmds(me.acct), getPosSnaps(me.acct)]);
+  await sweepStale(cmdsAll, me.acct);   // an order nobody took is closed here with its reason instead of waiting forever
   const dsMs = Math.max(0, ...snaps.map((s) => s.ds ?? 0)) * 1000;
   const cmds = cmdsAll.filter((c) => !dsMs || c.ts >= dsMs || c.status === 'pending' || c.status === 'sent').slice(0, 5);   // only today's (older ones are cleared daily)
   return put(chatId, mid, posText(snaps) + `\n\n📋 <b>คำสั่งจากเว็บ/AI วันนี้</b>\n` + (cmds.length
-    ? cmds.map((c) => `${ICON[c.status] ?? ''} ${clock(c.ts)} <b>${c.side}</b> ${esc(c.symbol)} ${c.lot}${c.ticket ? ' #' + c.ticket : ''}${c.note ? ' – ' + esc(c.note.slice(0, 60)) : ''}`).join('\n') : 'ยังไม่มีคำสั่งวันนี้') + `\n<i>อัปเดต ${hms()}</i>`,
+    ? cmds.map((c) => `${ICON[c.status] ?? ''} ${clock(c.ts)} <b>${c.side}</b> ${esc(c.symbol)} ${c.lot}${c.ticket ? ' #' + c.ticket : ''}${c.note ? ' – ' + esc(explainNote(c.note, true) ?? c.note.slice(0, 60)) : ''}`).join('\n') : 'ยังไม่มีคำสั่งวันนี้') + `\n<i>อัปเดต ${hms()}</i>`,
     [[B('📅 สรุปยอด', 'dy')], [B('🔄 รีเฟรช', 'od'), B('‹ กลับ', 'mn')]]);
 }
 export async function showDaily(chatId: string, me: Me, mid?: number, mode?: string) {

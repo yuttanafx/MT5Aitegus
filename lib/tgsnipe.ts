@@ -2,6 +2,7 @@ import { addCmd, getJSON, setJSON } from './store';
 import { getSnipe, listSnipe, SNIPE_FRESH_MS, type Plan, type SnipeRow } from './snipe';
 import { removePair, removeStale } from './pairs';
 import { esc, tgEdit, tgSend, type BtnStyle, type Kb, type TgLink } from './telegram';
+import { getMulti, saveSystems } from './systems';
 
 // "Sniper" screens of the Telegram bot: pick a pair the EA reports, see its support / resistance and the SL + TP1-3 (with the RR of each),
 // choose BUY or SELL + which TP + lot, confirm, and ONE order is queued for the EA with that SL / TP. The EA opens it with its own
@@ -36,10 +37,13 @@ function check(r: SnipeRow, side: 'BUY' | 'SELL', p: Plan, tp: number): string |
 export async function showSnipe(chatId: string, me: Me, mid?: number) {
   const rows = await listSnipe(me.acct);
   const back = [B('🔄 รีเฟรช', 'sn'), B('‹ เมนูหลัก', 'mn')];
-  if (!rows.length) return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nยังไม่มีข้อมูลจาก EA\nต้องใช้ EA เวอร์ชันที่มีโมดูล SniperSR และเปิดทิ้งไว้ (EA ส่งทุกประมาณ 1 นาที)\n<i>อัปเดต ${hms()}</i>`, [back]);
+  const multi = await getMulti(me.acct, 0);   // switch "several sniper orders on the same pair" (same one as on the dashboard)
+  const multiBtn = [B(multi ? '✅ ซื้อหลายออเดอร์ต่อคู่: เปิด' : '⬜ ซื้อหลายออเดอร์ต่อคู่: ปิด', 'sn:m')];
+  const multiTxt = multi ? '🔓 หลายออเดอร์ต่อคู่: <b>เปิด</b> (เปิดไม้ซ้ำคู่เดียวกันได้ตามเพดาน Sn_MultiMax ของ EA)' : '🔒 หลายออเดอร์ต่อคู่: <b>ปิด</b> (1 ไม้ต่อคู่ตามค่า EA)';
+  if (!rows.length) return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nยังไม่มีข้อมูลจาก EA\nต้องใช้ EA เวอร์ชันที่มีโมดูล SniperSR และเปิดทิ้งไว้ (EA ส่งทุกประมาณ 1 นาที)\n${multiTxt}\n<i>อัปเดต ${hms()}</i>`, [multiBtn, back]);
   const kb: Kb = rows.map((r) => [B(`${fresh(r) ? '' : '💤 '}${r.symbol} · ${f(r, r.bid)}`, `sn:v:${r.key}`)]);
   if (rows.some((r) => !fresh(r))) kb.push([B('🧹 ลบคู่ที่เงียบ', 'sn:z')]);
-  return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nเลือกคู่เงินที่ EA ส่งมา\n${rows.map((r) => `${fresh(r) ? '🟢' : '💤'} ${esc(r.symbol)} ${esc(r.tf)} · ${ago(r.ts)}`).join('\n')}\n<i>💤 = EA เงียบเกิน 4 นาที สั่งออเดอร์ไม่ได้ · อัปเดต ${hms()}</i>`, [...kb, back]);
+  return put(chatId, mid, `🎯 <b>สไนเปอร์ (แนวรับ/แนวต้าน)</b>\nเลือกคู่เงินที่ EA ส่งมา\n${rows.map((r) => `${fresh(r) ? '🟢' : '💤'} ${esc(r.symbol)} ${esc(r.tf)} · ${ago(r.ts)}`).join('\n')}\n${multiTxt}\n<i>💤 = EA เงียบเกิน 4 นาที สั่งออเดอร์ไม่ได้ · อัปเดต ${hms()}</i>`, [...kb, multiBtn, back]);
 }
 
 /* ---------- 2) one pair: levels + BUY / SELL plans ---------- */
@@ -114,6 +118,7 @@ export async function onSnipeButton(chatId: string, me: Me, mid: number, a: stri
   if (x === 'x') { await setJSON(pk(chatId), null); return showSnipe(chatId, me, mid); }
   if (x === 'y') return send(chatId, mid, me);
   if (x === 'z') { await removeStale(me.acct, 30 * 60_000); return showSnipe(chatId, me, mid); }
+  if (x === 'm') { await saveSystems(me.acct, { multi: !(await getMulti(me.acct, 0)) }); return showSnipe(chatId, me, mid); }   // on/off: several sniper orders on one pair
   if (!/^[A-Z0-9]{3,6}$/.test(key ?? '')) return showSnipe(chatId, me, mid);
   if (x === 'v') return showSnipePair(chatId, me, mid, key);
   if (x === 'd') { await removePair(me.acct, key); return showSnipe(chatId, me, mid); }

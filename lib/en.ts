@@ -57,6 +57,8 @@ export const EN: Record<string, string> = {
  "ยังไม่เคยเชื่อมต่อ": "Never connected",
  "เลือกระบบเทรด": "Choose trading system",
  "เลือกระบบเทรดที่ใช้": "Choose the trading system to use",
+ "ซื้อหลายออเดอร์ต่อคู่ (สไนเปอร์)": "Allow several sniper orders per pair",
+ "เปิด = สไนเปอร์เปิดหลายไม้ในคู่เดียวกันได้ ไม่เกินค่า Sn_MultiMax ของ EA (ต้องเป็นบัญชี Hedging) ปิด = ทำงานเหมือนเดิม": "On = the sniper may open several positions on the same pair, up to the EA's Sn_MultiMax (hedging account required). Off = works as before.",
  "เลือกระบบ": "Choose a system",
  "ใช้ทั้งสอง": "Use both",
  "ผู้ดูแลไม่ได้ให้สิทธิ์ระบบนี้": "The admin has not granted access to this system",

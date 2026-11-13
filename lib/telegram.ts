@@ -1,5 +1,6 @@
 import { getJSON, setJSON } from './store';
 import type { Cmd } from './types';
+import { explainNote } from './ordernote';
 
 // Telegram bot integration. Everything here is a no-op until TELEGRAM_BOT_TOKEN is set, so it costs no Redis commands when unused.
 export const tgEnabled = () => !!process.env.TELEGRAM_BOT_TOKEN;
@@ -72,7 +73,7 @@ export const cmdText = (c: Cmd) =>
   (c.sl ? ` · SL ${c.sl}` : '') + (c.tp ? ` · TP ${c.tp}` : '') +
   `\n<i>ที่มา: ${esc(SRC[c.source] ?? c.source)}</i>` +
   (c.ticket ? `\n🎫 Ticket <code>${c.ticket}</code>` : '') + (c.price ? `${c.ticket ? ' · ' : '\n'}ราคา <b>${c.price}</b>` : '') +
-  (c.note ? `\n<blockquote>${esc(c.note)}</blockquote>` : '');
+  (c.note ? `\n<blockquote>${esc(explainNote(c.note) ?? c.note)}</blockquote>` : '');
 export const notifyCmd = (c: Cmd, acct: string) => notifyAcct(acct, cmdText(c), true, c.status === 'pending' ? 'q' : c.status === 'done' ? 'ok' : 'bad');
 
 export const RTH: Record<string, [string, string]> = { trend_up: ['📈', 'ขาขึ้น'], trend_down: ['📉', 'ขาลง'], range: ['↔️', 'ไซด์เวย์'], volatile: ['⚡', 'ผันผวน'], news: ['📰', 'ช่วงข่าว'] };

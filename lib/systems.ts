@@ -32,8 +32,17 @@ export async function getSystems(acct: string, ttlMs = 5000): Promise<SysState> 
   return { sg: s.sg && al.sg, sr: s.sr && al.sr };
 }
 
-export async function saveSystems(acct: string, s: SysState) {
-  await setJSON(sysKey(acct), { sg: !!s.sg, sr: !!s.sr, ts: Date.now() });
+// "Several sniper orders on one pair" switch: off (default) = the EA keeps its own per-pair limit (Sn_MaxOpen),
+// on = the EA may stack up to Sn_MultiMax sniper positions on the same pair. Stored in the same record as the system switch.
+export async function getMulti(acct: string, ttlMs = 5000): Promise<boolean> {
+  return (await getJSON<any>(sysKey(acct), null, ttlMs))?.multi === true;
+}
+
+// Partial update: whatever is not given keeps its current value (so changing the pair switch never drops `multi`, and vice versa).
+export async function saveSystems(acct: string, s: Partial<SysState> & { multi?: boolean }) {
+  const cur = await getJSON<any>(sysKey(acct), null);
+  const sw = normSystems(cur);
+  await setJSON(sysKey(acct), { sg: s.sg ?? sw.sg, sr: s.sr ?? sw.sr, multi: s.multi ?? (cur?.multi === true), ts: Date.now() });
 }
 
 export { sysKey };
