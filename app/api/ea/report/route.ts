@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   c.status = status === 'done' ? 'done' : 'failed';
   c.ticket = Number(ticket) || undefined;
   c.price = Number(price) || undefined;
-  c.note = note || c.note;
+  c.note = note || undefined;   // the EA's result replaces any earlier warning (e.g. "EA offline")
   await saveCmds(cmds, a.acct);
   await notifyCmd(c, a.acct);
   return new Response('ok');

@@ -6,6 +6,7 @@ import { esc, saveLinks, tgApi, tgSend, type Kb, type TgLink } from '@/lib/teleg
 import { CFG_KEYS, cfgButton, cfgHome, cfgValue } from '@/lib/tgconfig';
 import { MENU_KEYS, gate, onMenuButton, plain, setPaused, showDaily, showMain, showOrders, showStatus } from '@/lib/tgmenu';
 import { showSnipe } from '@/lib/tgsnipe';
+import { explainNote } from '@/lib/ordernote';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
@@ -75,7 +76,7 @@ const NEED_LOGIN = 'ยังไม่ได้ล็อกอิน พิม�
 async function place(chatId: string, acct: string, o: Order) {
   const c = await addCmd({ ...o, source: 'manual', noHold: true }, acct);
   if (c.status === 'blocked') return; // addCmd already pushed the ⛔ reason to every chat of this account
-  return tgSend(chatId, `ส่งคำสั่งเข้าคิวแล้ว (id ${c.id}) EA จะรับภายในไม่กี่วินาที`);
+  return tgSend(chatId, `ส่งคำสั่งเข้าคิวแล้ว (id ${c.id}) EA จะรับภายในไม่กี่วินาที${c.note ? '\n<blockquote>⚠️ ' + esc(explainNote(c.note) ?? c.note) + '</blockquote>' : ''}`);
 }
 // order ready -> ask for the final tap (or send at once when TELEGRAM_CONFIRM=off)
 async function ask(chatId: string, acct: string, o: Order) {

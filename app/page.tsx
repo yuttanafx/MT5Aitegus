@@ -5,6 +5,7 @@ import ChartCard from '@/components/ChartCard';
 import Landing from '@/components/Landing';
 import { AdminBilling, MemberBilling, RegisterCard } from '@/components/Billing';
 import { LangBtn, tp, tx, useLang } from '@/lib/i18n';
+import { explainNote } from '@/lib/ordernote';
 
 const SAMPLE = { symbol: 'XAUUSD', tf: 'M15', price: 2411.9, adx: 31, rsi: 58, atr: 4.2, ema20: 2412.5, ema50: 2405.1 };
 const STATUS: Record<string, string> = tp({ pending: 'รอ EA รับ', sent: 'ส่งให้ EA แล้ว', done: 'เข้าออเดอร์แล้ว', failed: 'ไม่สำเร็จ', blocked: 'ถูก Risk บล็อก' });
@@ -405,6 +406,10 @@ export default function Page() {
               <button key={m} className={'btn ' + (mode === m ? 'main' : '')} aria-pressed={mode === m} disabled={busy || !can(m)} title={can(m) ? undefined : tx('ผู้ดูแลไม่ได้ให้สิทธิ์ระบบนี้')} onClick={() => mode !== m && set(m)}>{label}</button>
             ))}
           </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className={'btn ' + (sy.multi ? 'main' : '')} aria-pressed={!!sy.multi} disabled={busy} onClick={() => act(() => api('/api/systems', { multi: !sy.multi }))}>{tx('ซื้อหลายออเดอร์ต่อคู่ (สไนเปอร์)')}: {sy.multi ? tx('เปิด') : tx('ปิด')}</button>
+          </div>
+          <div className="mute">{tx('เปิด = สไนเปอร์เปิดหลายไม้ในคู่เดียวกันได้ ไม่เกินค่า Sn_MultiMax ของ EA (ต้องเป็นบัญชี Hedging) ปิด = ทำงานเหมือนเดิม')}</div>
           <div style={{ overflowX: 'auto' }}><table><thead><tr><th>{tx("ระบบ")}</th><th>{tx("สถานะสวิตช์")}</th><th>{tx("การเชื่อมต่อ EA")}</th></tr></thead><tbody>
             <tr><td><b>SmartGold Grid</b></td><td><span className={'chip ' + (sy.sg ? 'ok' : 'no')}>{!al.sg ? tx('ไม่ได้รับสิทธิ์') : sy.sg ? tx('เปิด') : tx('ปิด')}</span></td><td><span className={'chip ' + (ok(seen.sg) ? 'ok' : '')}>{dot(seen.sg)}</span></td></tr>
             <tr><td><b>SR Breakout</b></td><td><span className={'chip ' + (sy.sr ? 'ok' : 'no')}>{!al.sr ? tx('ไม่ได้รับสิทธิ์') : sy.sr ? tx('เปิด') : tx('ปิด')}</span></td><td><span className={'chip ' + (ok(seen.sr) ? 'ok' : '')}>{dot(seen.sr)}</span>{sy.srInfo?.symbol ? ` ${sy.srInfo.symbol}` : ''}{sy.srInfo?.pos != null ? ` · ไม้ที่เปิดอยู่ ${sy.srInfo.pos}` : ''}</td></tr>
@@ -471,7 +476,7 @@ export default function Page() {
             <button key={sd} className={'btn ' + (sd === 'BUY' ? 'main' : '')} disabled={busy} onClick={() => {
               const sym = ordSym;
               if (!window.confirm(`ยืนยัน ${sd} ${sym || '(คู่ล่าสุดของ EA)'} ${mLot} ล็อต ส่งเข้า MT5 ทันที?`)) return;
-              act(async () => { const r = await api('/api/orders', { side: sd, lot: Number(mLot), symbol: ordSym || undefined }); setMMsg(r.status === 'blocked' ? 'ถูกบล็อก: ' + (r.note ?? '') : `ส่งคำสั่ง ${sd} ${r.symbol} แล้ว รอ EA รับ (ไม่เกิน ~5 วินาที) ดูผลในตารางคำสั่ง`); });
+              act(async () => { const r = await api('/api/orders', { side: sd, lot: Number(mLot), symbol: ordSym || undefined }); setMMsg(r.status === 'blocked' ? 'ถูกบล็อก: ' + (explainNote(r.note) ?? r.note ?? '') : `ส่งคำสั่ง ${sd} ${r.symbol} แล้ว รอ EA รับ (ไม่เกิน ~5 วินาที) ดูผลในตารางคำสั่ง`); });
             }}>{sd === 'BUY' ? 'BUY ซื้อ' : 'SELL ขาย'}</button>
           ))}
         </div>
@@ -623,7 +628,7 @@ export default function Page() {
                 <td>{new Date(c.ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}</td>
                 <td>{c.symbol}</td><td className={c.side === 'BUY' ? 'buy' : 'sell'}>{c.side}</td><td>{c.lot}</td>
                 <td>{c.source === 'ai' ? 'AI' : c.source === 'manual' ? tx('สั่งเอง') : c.source === 'snipe' ? tx('สไนเปอร์') : 'Webhook'}</td>
-                <td>{STATUS[c.status]}{c.note ? <div className="mute">{c.note}</div> : null}</td>
+                <td>{STATUS[c.status]}{c.note ? <div className="mute">{explainNote(c.note) ?? c.note}</div> : null}</td>
               </tr>
             ))}
             {!data?.cmds?.length && <tr><td colSpan={6} className="mute">{tx("ยังไม่มีคำสั่ง ส่ง webhook ทดสอบตามคู่มือใน README")}</td></tr>}

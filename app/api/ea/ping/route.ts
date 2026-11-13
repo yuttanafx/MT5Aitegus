@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { eaAuth } from '@/lib/auth';
 import { every, setJSON } from '@/lib/store';
-import { getSystems, seenKey } from '@/lib/systems';
+import { getMulti, getSystems, seenKey } from '@/lib/systems';
 export const dynamic = 'force-dynamic';
 
 // Heartbeat of the SR Breakout EA. Same authentication as the SmartGold EA (x-api-key + x-account), so a wrong key
@@ -23,5 +23,5 @@ export async function POST(req: Request) {
   if (!p.success) return new Response('bad body', { status: 400 });
   if (every('seen:sr:' + a.acct, 25_000)) await setJSON(seenKey('sr', a.acct), { ts: Date.now(), symbol: p.data.symbol ?? '', ver: p.data.ver ?? '', eq: p.data.eq ?? null, pos: p.data.pos ?? null });
   const s = await getSystems(a.acct);
-  return new Response(['ok=1', `on=${s.sr ? 1 : 0}`, `sg=${s.sg ? 1 : 0}`, `sr=${s.sr ? 1 : 0}`].join('\n'), { headers: { 'content-type': 'text/plain' } });
+  return new Response(['ok=1', `on=${s.sr ? 1 : 0}`, `sg=${s.sg ? 1 : 0}`, `sr=${s.sr ? 1 : 0}`, `multi=${(await getMulti(a.acct)) ? 1 : 0}`].join('\n'), { headers: { 'content-type': 'text/plain' } });
 }

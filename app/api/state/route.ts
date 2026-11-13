@@ -6,6 +6,7 @@ import { getAiConf } from '@/lib/aiconf';
 import { listSymRows, symKey } from '@/lib/regime';
 import { mergeScan, type ScanSnap } from '@/lib/scan';
 import { getAllowed, normSystems, seenKey, sysKey } from '@/lib/systems';
+import { sweepStale } from '@/lib/easeen';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
@@ -25,6 +26,7 @@ async function handle(req: Request) {
     getMany<any>([ak('cmds', acct), ak('decision', acct), 'symbols', ak('symidx', acct), sysKey(acct), seenKey('sg', acct), seenKey('sr', acct), ak('scan', acct)]), getSettings(), getStoredKeys(),
   ]);
   const cmds: any[] = cmdsRaw ?? [];
+  await sweepStale(cmds, acct);   // orders nobody took are closed with their reason, so the table never shows "waiting" forever
   const syms: string[] = symsRaw ?? [];
   const news = await newsView(settings, syms.length ? syms : [decision?.symbol ?? 'XAUUSD']).catch(() => null);
   const mask = (v?: string) => (v ? '••••' + v.slice(-4) : '');
@@ -50,6 +52,6 @@ async function handle(req: Request) {
   const accounts = admin ? [{ id: 'main', name: 'บัญชีหลัก (Admin)', login: '' }, ...users.map((u) => ({ id: u.id, name: u.name, login: u.login ?? '' }))] : undefined;
   const allowed = await getAllowed(acct);
   const sw = normSystems(sysRaw);
-  const systems = { sg: sw.sg && allowed.sg, sr: sw.sr && allowed.sr, allowed, seen: { sg: seenSg?.ts ?? null, sr: seenSr?.ts ?? null }, srInfo: seenSr ? { symbol: seenSr.symbol ?? '', ver: seenSr.ver ?? '', eq: seenSr.eq ?? null, pos: seenSr.pos ?? null } : null };
+  const systems = { sg: sw.sg && allowed.sg, sr: sw.sr && allowed.sr, multi: sysRaw?.multi === true, allowed, seen: { sg: seenSg?.ts ?? null, sr: seenSr?.ts ?? null }, srInfo: seenSr ? { symbol: seenSr.symbol ?? '', ver: seenSr.ver ?? '', eq: seenSr.eq ?? null, pos: seenSr.pos ?? null } : null };
   return Response.json({ systems, ai, symbols, scanAi: scan?.ai ? { ts: scan.ai.ts, summary: scan.ai.summary ?? null, error: scan.ai.error ?? null, provider: scan.ai.provider ?? null, n: Object.keys(scan.ai.res).length } : null, scanTs: scan?.ts ?? null, selSym: selRow?.key ?? null, chart, account, accounts, news, cmds: cmds.slice(0, 15), decision, settings, me, strategies: STRATEGIES.map((s) => ({ id: s.id, name: s.name, side: s.side, conds: s.conds.map((c) => c.text) })), keys: admin ? keys : {}, keyHints: admin ? keyHints : {} });
 }
