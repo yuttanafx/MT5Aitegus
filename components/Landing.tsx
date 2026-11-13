@@ -169,7 +169,7 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
           <a className="mute" href={EA_VIEW} target="_blank" rel="noopener noreferrer">{t("ดาวน์โหลดไม่ได้? เปิดไฟล์บน Google Drive","Can't download? Open the file on Google Drive")}</a>
           <ol className="lp-install">
             <li>{t("วางไฟล์ลงในโฟลเดอร์ ","Place the file in the folder ")}<code>MQL5/Experts</code>{t(" แล้วคอมไพล์ใน MetaEditor"," and compile it in MetaEditor")}</li>
-            <li>{t("ใน MT5 ไปที่ Tools › Options › Expert Advisors เลือก Allow WebRequest แล้วเพิ่ม https://docs.google.com ","In MT5 go to Tools › Options › Expert Advisors, tick Allow WebRequest and add ")}<code>{origin || t("ลิงก์เว็บนี้","this site's link")}</code></li>
+            <li>{t("ใน MT5 ไปที่ Tools › Options › Expert Advisors เลือก Allow WebRequest แล้วเพิ่ม https://docs.google.com และ","In MT5 go to Tools › Options › Expert Advisors, tick Allow WebRequest and add ")}<code>{origin || t("ลิงก์เว็บนี้","this site's link")}</code></li>
             <li>{t("ใส่ ","Set ")}<code>Hub_Url</code>{t(" เป็นลิงก์เดียวกัน และ "," to the same link, and ")}<code>Hub_EAKey</code>{t(" ตามที่ผู้ดูแลออกให้"," as issued by your admin")}</li>
           </ol>
         </div>
