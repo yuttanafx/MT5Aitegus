@@ -177,9 +177,12 @@ export default function Landing({ themeBtn, children }: { themeBtn: ReactNode; c
       </section>
 
       <section className="lp-sec lp-contact rv" id="contact" aria-labelledby="contact-h">
-        <h2 id="contact-h" className="lp-h2">{t("ติดต่อเรา","Contact us")}</h2>
-        <p className="mute">{t("มีคำถามหรืออยากสมัครใช้งาน ทักไลน์ OA ได้เลย","Questions or want to sign up? Message us on LINE OA.")}</p>
-        <a className="btn lp-cta lp-line-btn" href={LINE_URL} target="_blank" rel="noopener noreferrer"><Icon d={LINE_ICON} size={20} />{t("ติดต่อเรา ผ่าน LINE OA","Contact us on LINE OA")}</a>
+        <img className="lp-promo-img" src="/mts-capital-futures.jpg" alt="MTS Capital เทรด Futures อย่างมั่นใจ มีใบอนุญาตจาก กลต. Meta Trader 5" width={494} height={619} loading="lazy" decoding="async" />
+        <div className="lp-contact-txt">
+          <h2 id="contact-h" className="lp-h2">{t("ติดต่อเรา","Contact us")}</h2>
+          <p className="mute">{t("มีคำถามหรืออยากสมัครใช้งาน ทักไลน์ OA ได้เลย","Questions or want to sign up? Message us on LINE OA.")}</p>
+          <a className="btn lp-cta lp-line-btn" href={LINE_URL} target="_blank" rel="noopener noreferrer"><Icon d={LINE_ICON} size={20} />{t("ติดต่อเรา ผ่าน LINE OA","Contact us on LINE OA")}</a>
+        </div>
       </section>
 
       <footer className="lp-foot mute">{t("การเทรดมีความเสี่ยง ผลในอดีตและภาพตัวอย่างไม่รับประกันผลในอนาคต ควรทดสอบกับบัญชีทดลองก่อนใช้เงินจริง","Trading involves risk. Past results and demo visuals do not guarantee future results. Test on a demo account before using real money.")}</footer>

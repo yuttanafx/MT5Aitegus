@@ -227,3 +227,11 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;background:var(--page)
   .js .rv{opacity:1;transform:none;transition:none}
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
 }
+
+/* MTS Capital promo banner */
+.lp-promo-img{display:block;width:100%;max-width:440px;height:auto;border-radius:18px;border:1px solid var(--line);box-shadow:0 18px 50px -22px rgba(0,0,0,.6)}
+.lp-contact{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px 64px;align-items:center;text-align:left}
+.lp-contact .lp-promo-img{justify-self:end}
+.lp-contact-txt{display:flex;flex-direction:column;align-items:flex-start;gap:14px}
+.lp-contact-txt .lp-h2,.lp-contact-txt p{margin:0}
+@media (max-width:900px){.lp-contact{grid-template-columns:1fr;text-align:center}.lp-contact .lp-promo-img{justify-self:center}.lp-contact-txt{align-items:center}}
